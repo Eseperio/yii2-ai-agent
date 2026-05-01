@@ -1,0 +1,9 @@
+namespace: ""
+support_namespace: ""
+actor_suffix: Tester
+bootstrap: bootstrap.php
+paths:
+  tests: .
+  output: _output
+  data: _data
+  support: _support

@@ -1,0 +1,40 @@
+{
+  "name": "eseperio/yii2-ai-agent",
+  "description": "Yii2 extension for embedding an AI assistant chat with conversations, tools and contexts.",
+  "type": "yii2-extension",
+  "license": "proprietary",
+  "require": {
+    "php": ">=8.3.0",
+    "yiisoft/yii2": "^2.0",
+    "openai-php/client": "^0.18.0",
+    "guzzlehttp/guzzle": "^7.0",
+    "ext-json": "*"
+  },
+  "require-dev": {
+    "phpunit/phpunit": "^10.0 || ^11.0 || ^12.0",
+    "codeception/codeception": "^5.0",
+    "codeception/module-yii2": "^2.0",
+    "codeception/module-phpbrowser": "^3.0",
+    "codeception/module-rest": "^3.0",
+    "codeception/module-asserts": "^3.0",
+    "codeception/module-db": "^3.0",
+    "codeception/lib-innerbrowser": "^4.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "eseperio\\aiagent\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "eseperio\\aiagent\\tests\\": "tests/"
+    }
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "config": {
+    "allow-plugins": {
+      "yiisoft/yii2-composer": true
+    }
+  }
+}
