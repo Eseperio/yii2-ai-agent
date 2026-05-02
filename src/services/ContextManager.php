@@ -9,7 +9,8 @@ class ContextManager extends Component
 {
     public function listContexts(int $conversationId): array
     {
-        return Context::find()
+        $class = $this->contextClass();
+        return $class::find()
             ->where(['conversation_id' => $conversationId, 'status' => 'active'])
             ->orderBy(['sort_order' => SORT_ASC, 'id' => SORT_ASC])
             ->all();
@@ -17,7 +18,8 @@ class ContextManager extends Component
 
     public function addContext(int $conversationId, int $type, array $metadata, ?string $label = null, int $sortOrder = 0): Context
     {
-        $context = new Context();
+        $class = $this->contextClass();
+        $context = new $class();
         $context->conversation_id = $conversationId;
         $context->type = $type;
         $context->metadata = json_encode($metadata);
@@ -31,7 +33,8 @@ class ContextManager extends Component
 
     public function updateContext(int $contextId, ?int $type = null, ?array $metadata = null, ?string $label = null, ?int $sortOrder = null): ?Context
     {
-        $context = Context::findOne($contextId);
+        $class = $this->contextClass();
+        $context = $class::findOne($contextId);
         if (!$context) {
             return null;
         }
@@ -64,11 +67,17 @@ class ContextManager extends Component
 
     private function setStatus(int $contextId, string $status): bool
     {
-        $context = Context::findOne($contextId);
+        $class = $this->contextClass();
+        $context = $class::findOne($contextId);
         if (!$context) {
             return false;
         }
         $context->status = $status;
         return $context->save(false, ['status', 'updated_at']);
+    }
+
+    private function contextClass(): string
+    {
+        return \eseperio\aiagent\Module::resolveActive()?->contextClass ?: Context::class;
     }
 }

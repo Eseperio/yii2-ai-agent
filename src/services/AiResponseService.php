@@ -12,9 +12,17 @@ class AiResponseService extends Component
         if (!$module) {
             return [];
         }
+        $internalContexts = $payload['contexts'] ?? [];
 
         if (isset($payload['metadata']) && is_array($payload['metadata'])) {
             $payload['metadata'] = $this->normalizeMetadata($payload['metadata']);
+        }
+
+        if (!isset($payload['service_tier'])) {
+            $serviceTier = $module->serviceTier ?: ($module->clientConfig['serviceTier'] ?? null);
+            if (is_string($serviceTier) && trim($serviceTier) !== '') {
+                $payload['service_tier'] = trim($serviceTier);
+            }
         }
 
         if (isset($payload['input']) && is_array($payload['input'])) {
@@ -23,6 +31,10 @@ class AiResponseService extends Component
 
         if (isset($payload['tools']) && is_array($payload['tools'])) {
             $payload['tools'] = $module->getToolRegistry()->normalize($payload['tools']);
+        }
+
+        if (!isset($payload['text']) && is_array($module->responseTextFormat)) {
+            $payload['text'] = ['format' => $module->responseTextFormat];
         }
 
         if (!isset($payload['tools'])) {
@@ -41,6 +53,8 @@ class AiResponseService extends Component
             $payload['instructions'] = $this->buildInstructions($module, $payload);
         }
 
+        unset($payload['contexts']);
+
         $client = $module->getClientFactory()->create($module->clientConfig);
         try {
             return $client->createResponse($payload);
@@ -52,7 +66,9 @@ class AiResponseService extends Component
             $fallbackPayload = $payload;
             unset($fallbackPayload['previous_response_id']);
             if (!isset($fallbackPayload['instructions'])) {
-                $fallbackPayload['instructions'] = $this->buildInstructions($module, $fallbackPayload);
+                $instructionPayload = $fallbackPayload;
+                $instructionPayload['contexts'] = $internalContexts;
+                $fallbackPayload['instructions'] = $this->buildInstructions($module, $instructionPayload);
             }
 
             return $client->createResponse($fallbackPayload);
@@ -73,6 +89,9 @@ class AiResponseService extends Component
         );
 
         $parts = [];
+        if (trim($module->baseInstructions) !== '') {
+            $parts[] = $module->baseInstructions;
+        }
         foreach ($module->instructionProviders as $provider) {
             if (!$this->isInstructionProviderAvailable($provider, $instructionContext)) {
                 continue;
@@ -123,6 +142,7 @@ class AiResponseService extends Component
         }
 
         if (is_array($provider)) {
+            unset($provider['available']);
             return \Yii::createObject($provider);
         }
 

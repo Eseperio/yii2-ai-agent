@@ -2,6 +2,8 @@
 
 namespace eseperio\aiagent\actions\chat;
 
+use yii\web\Response;
+
 class IndexAction extends BaseChatAction
 {
     public function run()
@@ -17,11 +19,17 @@ class IndexAction extends BaseChatAction
             }
         }
 
-        return \eseperio\aiagent\widgets\AiChat::widget([
+        if (\Yii::$app->has('response')) {
+            \Yii::$app->response->format = Response::FORMAT_HTML;
+        }
+
+        $content = \eseperio\aiagent\widgets\AiChat::widget([
             'mode' => $this->request()->get('mode', \eseperio\aiagent\widgets\AiChat::MODE_PAGE),
             'position' => $this->request()->get('position', \eseperio\aiagent\widgets\AiChat::POSITION_BOTTOM_RIGHT),
             'model' => $requestedModel,
             'conversationId' => (int)$this->request()->get('conversation_id', 0) ?: null,
         ]);
+
+        return $this->controller->renderContent($content);
     }
 }

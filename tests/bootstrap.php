@@ -3,6 +3,8 @@
 require_once __DIR__ . '/../../vendor/autoload.php';
 require_once __DIR__ . '/../../vendor/yiisoft/yii2/Yii.php';
 
+\yii\helpers\FileHelper::createDirectory(sys_get_temp_dir() . '/yii2-ai-agent-assets');
+
 spl_autoload_register(static function (string $class): void {
     $prefix = 'eseperio\\aiagent\\';
     $baseDir = dirname(__DIR__) . '/src/';

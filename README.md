@@ -40,6 +40,16 @@ return [
 `defaultModel` es el modelo por defecto del modulo. El widget puede sobreescribirlo con su parametro `model` cuando el permiso `canUseModel` lo permita.
 Si prefieres otro ID de modulo, usa el mismo valor en la configuracion y en tus rutas; la libreria no depende de que el ID sea exactamente `aiAgent`. En los ejemplos siguientes se usa el ID `aiAgent`; si configuras el modulo como `ai-agent`, las rutas seran `/ai-agent/chat/...`.
 
+Por defecto el modulo solicita a OpenAI una respuesta estructurada con `text.format` JSON schema. La respuesta debe traer
+`response`, `conversation_title_suggestion` y `questionnaire`. Si `questionnaire.enabled` es `true`, el chat guarda un
+mensaje separado de tipo `questionnaire` y el widget lo renderiza como formulario con opciones seleccionables. Puedes
+desactivar o reemplazar ese contrato configurando `responseTextFormat`.
+
+El modulo tambien antepone `baseInstructions` a las instrucciones de cada aplicacion. Ese bloque explica al LLM como
+usar el contrato JSON, cuando debe usar `questionnaire`, como tratar las tools y que no debe exponer detalles internos
+en el texto visible. Las aplicaciones Yii2 deben usar `instructionProviders` solo para anadir contexto de negocio,
+reglas del dominio y guias especificas.
+
 ## Widget de chat
 
 Modo flotante:
@@ -157,6 +167,7 @@ La extension incluye un controlador fake para emular `POST /responses` de OpenAI
 
 Respuestas fake soportadas en tests:
 - respuesta simple
+- cuestionario estructurado
 - `tool_call`
 - `function_call`
 - escenario posterior a ejecucion de tool

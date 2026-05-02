@@ -50,6 +50,7 @@ class SendMessageApprovalCest
             'conversation_id' => $conversation['id'],
             'tool_name' => $pending['name'],
             'tool_call_id' => $pending['tool_call_id'],
+            'snapshot_id' => $pending['snapshot_id'] ?? null,
             'arguments' => ['value' => 1],
         ]);
 
@@ -59,12 +60,19 @@ class SendMessageApprovalCest
         $I->assertSame(1, $executeResponse['data']['context_count'] ?? null);
         $I->assertNotEmpty($executeResponse['created_contexts'] ?? []);
         $I->assertSame('Created from tool', $executeResponse['created_contexts'][0]['label'] ?? null);
+        $I->assertTrue($executeResponse['followup']['success'] ?? false);
+        $I->assertSame('fake-after-tool-result', $executeResponse['followup']['message'] ?? null);
 
         $I->sendGet('/ai-agent/chat/get-history?conversation_id=' . $conversation['id']);
         $history = json_decode($I->grabResponse(), true);
         $I->assertTrue($history['success'] ?? false);
         $I->assertNotEmpty(array_filter($history['messages'] ?? [], static function (array $message): bool {
             return ($message['message_type'] ?? null) === 'tool_result';
+        }));
+        $I->assertNotEmpty(array_filter($history['messages'] ?? [], static function (array $message): bool {
+            return ($message['role'] ?? null) === 'assistant'
+                && ($message['message_type'] ?? null) === 'message'
+                && ($message['content'] ?? null) === 'fake-after-tool-result';
         }));
 
         $I->sendGet('/ai-agent/chat/list-contexts?conversation_id=' . $conversation['id']);
@@ -189,6 +197,13 @@ class SendMessageApprovalCest
         $I->assertNotEmpty($response['auto_executed_tools'] ?? []);
         $I->assertSame('auto_demo_tool', $response['auto_executed_tools'][0]['name'] ?? null);
         $I->assertSame(true, $response['auto_executed_tools'][0]['data']['auto'] ?? null);
+        $I->assertTrue($response['followup']['success'] ?? false);
+        $I->assertSame('fake-after-tool-result', $response['followup']['message'] ?? null);
+        $I->assertNotEmpty(array_filter($response['messages'] ?? [], static function (array $message): bool {
+            return ($message['role'] ?? null) === 'assistant'
+                && ($message['message_type'] ?? null) === 'message'
+                && ($message['content'] ?? null) === 'fake-after-tool-result';
+        }));
     }
 
     public function testSendMessageStopsAutoExecutionAtConfiguredLimit(\FunctionalTester $I): void
@@ -224,6 +239,7 @@ class SendMessageApprovalCest
         $I->assertTrue($response['success'] ?? false);
         $I->assertNotEmpty($response['auto_executed_tools'] ?? []);
         $I->assertSame('auto_demo_tool', $response['auto_executed_tools'][0]['name'] ?? null);
+        $I->assertTrue($response['followup']['success'] ?? false);
     }
 
     public function testSendMessagePersistsUsageTokens(\FunctionalTester $I): void
@@ -242,6 +258,50 @@ class SendMessageApprovalCest
         $I->assertGreaterThan(0, $response['messages'][1]['input_tokens'] ?? 0);
         $I->assertGreaterThan(0, $response['messages'][1]['output_tokens'] ?? 0);
         $I->assertGreaterThan(0, $response['messages'][1]['total_tokens'] ?? 0);
+    }
+
+    public function testSendMessagePersistsStructuredQuestionnaireSeparately(\FunctionalTester $I): void
+    {
+        $I->sendPost('/ai-agent/chat/create-conversation', []);
+        $conversation = json_decode($I->grabResponse(), true)['conversation'] ?? null;
+        $I->assertIsArray($conversation);
+
+        $I->sendPost('/ai-agent/chat/send-message', [
+            'conversation_id' => $conversation['id'],
+            'message' => 'questionnaire',
+        ]);
+
+        $response = json_decode($I->grabResponse(), true);
+        $I->assertTrue($response['success'] ?? false);
+        $messages = $response['messages'] ?? [];
+        $questionnaires = array_values(array_filter($messages, static function (array $message): bool {
+            return ($message['message_type'] ?? null) === 'questionnaire';
+        }));
+
+        $I->assertNotEmpty($questionnaires);
+        $questionnaire = json_decode($questionnaires[0]['content'] ?? '{}', true);
+        $I->assertTrue($questionnaire['enabled'] ?? false);
+        $I->assertSame('single_choice', $questionnaire['questions'][0]['type'] ?? null);
+        $I->assertSame('Producto', $questionnaire['questions'][0]['options'][0]['label'] ?? null);
+        $I->assertCount(2, $questionnaire['questions'] ?? []);
+    }
+
+    public function testSendMessageReturnsJsonWhenProviderReturnsError(\FunctionalTester $I): void
+    {
+        $I->sendPost('/ai-agent/chat/create-conversation', []);
+        $conversation = json_decode($I->grabResponse(), true)['conversation'] ?? null;
+        $I->assertIsArray($conversation);
+
+        $I->sendPost('/ai-agent/chat/send-message', [
+            'conversation_id' => $conversation['id'],
+            'message' => 'provider-error',
+        ]);
+
+        $I->seeResponseCodeIs(502);
+        $response = json_decode($I->grabResponse(), true);
+        $I->assertFalse($response['success'] ?? true);
+        $I->assertSame('Simulated provider error', $response['error'] ?? null);
+        $I->assertNotEmpty($response['messages'] ?? []);
     }
 
     public function testExecuteToolWithClassHandler(\FunctionalTester $I): void

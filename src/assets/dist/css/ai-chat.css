@@ -61,7 +61,8 @@
 
 .ai-agent-icon-button,
 .ai-agent-send,
-.ai-agent-tool-approve {
+.ai-agent-tool-approve,
+.ai-agent-questionnaire-submit {
     border: 1px solid var(--ai-agent-border);
     background: #f8fafc;
     color: var(--ai-agent-text);
@@ -72,7 +73,8 @@
 }
 
 .ai-agent-send,
-.ai-agent-tool-approve {
+.ai-agent-tool-approve,
+.ai-agent-questionnaire-submit {
     background: var(--ai-agent-accent);
     border-color: var(--ai-agent-accent);
     color: #fff;
@@ -190,9 +192,290 @@
     background: #fffdf5;
 }
 
-.ai-agent-question {
-    margin-top: 6px;
+.ai-agent-message-action .ai-agent-message-body {
+    border: 1px solid var(--ai-agent-border);
+    background: #f8fafc;
+}
+
+.ai-agent-action-card {
+    display: grid;
+    gap: 8px;
+}
+
+.ai-agent-action-header,
+.ai-agent-action-footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.ai-agent-action-header {
+    justify-content: space-between;
+}
+
+.ai-agent-action-title {
+    color: var(--ai-agent-text);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.ai-agent-action-detail,
+.ai-agent-action-status {
     color: var(--ai-agent-muted);
+    font-size: 12px;
+}
+
+.ai-agent-action-status.is-success {
+    color: #027a48;
+}
+
+.ai-agent-action-auto-approve {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: auto;
+    color: var(--ai-agent-muted);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.ai-agent-action-auto-approve input {
+    margin: 0;
+}
+
+.ai-agent-action-reject,
+.ai-agent-action-execute {
+    border: 1px solid var(--ai-agent-border);
+    border-radius: 6px;
+    min-height: 32px;
+    padding: 5px 10px;
+    background: #fff;
+    color: var(--ai-agent-text);
+    cursor: pointer;
+}
+
+.ai-agent-action-execute {
+    background: var(--ai-agent-accent);
+    border-color: var(--ai-agent-accent);
+    color: #fff;
+}
+
+.ai-agent-action-reject {
+    color: #b42318;
+    border-color: #fecdca;
+    background: #fffafa;
+}
+
+.ai-agent-action-reject:disabled,
+.ai-agent-action-execute:disabled {
+    cursor: not-allowed;
+    opacity: .55;
+}
+
+.ai-agent-processing-message {
+    animation: ai-agent-slide-in .25s ease;
+}
+
+.ai-agent-processing-body {
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    color: var(--ai-agent-muted);
+    background: #f7fafc;
+}
+
+.ai-agent-processing-dots span {
+    display: inline-block;
+    margin-right: 3px;
+    font-size: 18px;
+    animation: ai-agent-processing-blink 1.4s infinite both;
+}
+
+.ai-agent-processing-dots span:nth-child(2) {
+    animation-delay: .2s;
+}
+
+.ai-agent-processing-dots span:nth-child(3) {
+    animation-delay: .4s;
+}
+
+.ai-agent-processing-text {
+    color: var(--ai-agent-muted);
+    font-style: italic;
+    animation: ai-agent-fade-in .25s ease;
+}
+
+@keyframes ai-agent-processing-blink {
+    0% { opacity: .2; }
+    20% { opacity: 1; }
+    100% { opacity: .2; }
+}
+
+@keyframes ai-agent-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes ai-agent-slide-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.ai-agent-questionnaire {
+    display: grid;
+    gap: 10px;
+}
+
+.ai-agent-questionnaire-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.ai-agent-questionnaire-title {
+    display: block;
+    font-size: 14px;
+}
+
+.ai-agent-questionnaire-step {
+    color: var(--ai-agent-muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.ai-agent-questionnaire-description {
+    margin: 0;
+    color: var(--ai-agent-muted);
+    font-size: 13px;
+}
+
+.ai-agent-questionnaire-form {
+    display: grid;
+    gap: 12px;
+}
+
+.ai-agent-question {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.ai-agent-question.has-error .ai-agent-question-label {
+    color: #b42318;
+}
+
+.ai-agent-question.has-error .ai-agent-question-input,
+.ai-agent-question.has-error .ai-agent-question-other-input {
+    border-color: #f04438;
+}
+
+.ai-agent-question-label {
+    margin-bottom: 6px;
+    color: var(--ai-agent-text);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.ai-agent-question-required {
+    margin-left: 4px;
+    color: #b42318;
+}
+
+.ai-agent-question-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 6px 0;
+    color: var(--ai-agent-text);
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.ai-agent-question-option input {
+    margin-top: 2px;
+}
+
+.ai-agent-question-input,
+.ai-agent-question-other-input {
+    width: 100%;
+    border: 1px solid var(--ai-agent-border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font: inherit;
+}
+
+.ai-agent-question-other-input {
+    margin-top: 4px;
+}
+
+.ai-agent-question-other-input:disabled {
+    display: none;
+}
+
+.ai-agent-questionnaire-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.ai-agent-questionnaire-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ai-agent-questionnaire-skip,
+.ai-agent-questionnaire-prev,
+.ai-agent-questionnaire-next,
+.ai-agent-questionnaire-submit {
+    border: 1px solid var(--ai-agent-border);
+    border-radius: 6px;
+    min-height: 32px;
+    padding: 5px 10px;
+    background: #fff;
+    color: var(--ai-agent-text);
+    cursor: pointer;
+}
+
+.ai-agent-questionnaire-next,
+.ai-agent-questionnaire-submit {
+    background: var(--ai-agent-accent);
+    border-color: var(--ai-agent-accent);
+    color: #fff;
+}
+
+.ai-agent-questionnaire-skip {
+    color: #b54708;
+    border-color: #fedf89;
+    background: #fffbeb;
+}
+
+.ai-agent-questionnaire-skip:disabled,
+.ai-agent-questionnaire-prev:disabled,
+.ai-agent-questionnaire-next:disabled,
+.ai-agent-questionnaire-submit:disabled {
+    cursor: not-allowed;
+    opacity: .55;
+}
+
+.ai-agent-questionnaire-status {
+    color: var(--ai-agent-muted);
+    font-size: 12px;
+}
+
+.ai-agent-questionnaire-status.is-success {
+    color: #027a48;
 }
 
 .ai-agent-pending-tools {

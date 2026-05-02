@@ -14,6 +14,7 @@ class OpenAiResponsesClient extends Component implements AiClientInterface
     public ?string $model = null;
     public ?string $organization = null;
     public ?string $project = null;
+    public ?string $serviceTier = null;
     public ?float $timeout = 120.0;
     public ?float $connectTimeout = 20.0;
     public array $httpClientOptions = [];

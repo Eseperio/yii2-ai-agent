@@ -12,10 +12,12 @@ class ConversationManager extends Component
     public function createConversation(?string $title = null, ?string $model = null, array $metadata = [], array $contexts = [], mixed $createdBy = null): Conversation
     {
         $module = $this->getModule();
+        $conversationClass = $this->conversationClass();
+        $messageClass = $this->messageClass();
         if ($module?->reuseLastEmptyConversation && $createdBy !== null && $createdBy !== '') {
-            $query = Conversation::find()
+            $query = $conversationClass::find()
                 ->alias('conversation')
-                ->leftJoin(Message::tableName() . ' message', 'message.conversation_id = conversation.id')
+                ->leftJoin($messageClass::tableName() . ' message', 'message.conversation_id = conversation.id')
                 ->where(['conversation.status' => 'active'])
                 ->andWhere(['message.id' => null])
                 ->orderBy(['conversation.updated_at' => SORT_DESC, 'conversation.id' => SORT_DESC]);
@@ -28,7 +30,7 @@ class ConversationManager extends Component
             }
         }
 
-        $conversation = new Conversation();
+        $conversation = new $conversationClass();
         $conversation->title = $title;
         $conversation->model = $model;
         $conversation->metadata = $metadata ? json_encode($metadata) : null;
@@ -63,12 +65,14 @@ class ConversationManager extends Component
 
     public function listConversations(): array
     {
-        return Conversation::find()->where(['<>', 'status', 'deleted'])->orderBy(['updated_at' => SORT_DESC, 'id' => SORT_DESC])->all();
+        $class = $this->conversationClass();
+        return $class::find()->where(['<>', 'status', 'deleted'])->orderBy(['updated_at' => SORT_DESC, 'id' => SORT_DESC])->all();
     }
 
     public function getConversation(int $id): ?Conversation
     {
-        return Conversation::findOne($id);
+        $class = $this->conversationClass();
+        return $class::findOne($id);
     }
 
     public function renameConversation(int $id, ?string $title): bool
@@ -127,7 +131,8 @@ class ConversationManager extends Component
         ?array $toolPayload = null,
         array $tokenUsage = []
     ): Message {
-        $message = new Message();
+        $messageClass = $this->messageClass();
+        $message = new $messageClass();
         $message->conversation_id = $conversationId;
         $message->role = $role;
         $message->message_type = $messageType;
@@ -141,7 +146,8 @@ class ConversationManager extends Component
         $message->total_tokens = (int)($tokenUsage['total_tokens'] ?? 0);
         $message->save(false);
 
-        $conversation = Conversation::findOne($conversationId);
+        $conversationClass = $this->conversationClass();
+        $conversation = $conversationClass::findOne($conversationId);
         if ($conversation instanceof ActiveRecord) {
             $conversation->last_message_at = time();
             if ($responseId !== null) {
@@ -158,7 +164,8 @@ class ConversationManager extends Component
 
     public function getMessagesForDisplay(int $conversationId): array
     {
-        return Message::find()
+        $class = $this->messageClass();
+        return $class::find()
             ->where(['conversation_id' => $conversationId])
             ->orderBy(['created_at' => SORT_ASC, 'id' => SORT_ASC])
             ->asArray()
@@ -167,7 +174,8 @@ class ConversationManager extends Component
 
     public function findLastResponseIdForContinuation(int $conversationId): ?string
     {
-        $message = Message::find()
+        $class = $this->messageClass();
+        $message = $class::find()
             ->where(['conversation_id' => $conversationId])
             ->andWhere(['not', ['response_id' => null]])
             ->andWhere(['<>', 'response_id', ''])
@@ -187,5 +195,15 @@ class ConversationManager extends Component
     private function getModule(): ?\eseperio\aiagent\Module
     {
         return \eseperio\aiagent\Module::resolveActive();
+    }
+
+    private function conversationClass(): string
+    {
+        return $this->getModule()?->conversationClass ?: Conversation::class;
+    }
+
+    private function messageClass(): string
+    {
+        return $this->getModule()?->messageClass ?: Message::class;
     }
 }

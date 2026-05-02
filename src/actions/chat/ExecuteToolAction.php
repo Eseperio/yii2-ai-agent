@@ -23,7 +23,10 @@ class ExecuteToolAction extends BaseChatAction
         }
 
         $snapshotRepo = $this->module()?->getToolSnapshotRepository();
-        $snapshot = $snapshotRepo?->findOneByConversationAndTool($conversationId, $toolName);
+        $snapshotId = (int)$request->post('snapshot_id', 0);
+        $snapshot = $snapshotId > 0
+            ? $snapshotRepo?->findOneByIdAndConversation($snapshotId, $conversationId)
+            : $snapshotRepo?->findOneByConversationAndTool($conversationId, $toolName);
         $definition = $snapshotRepo && $snapshot ? $snapshotRepo->toDefinition($snapshot) : null;
         if (!$definition instanceof ToolDefinition) {
             $definition = $this->module()?->getToolRegistry()->findByName($toolName, new \eseperio\aiagent\dto\ToolContext(
@@ -139,6 +142,15 @@ class ExecuteToolAction extends BaseChatAction
             $snapshot->save(false, ['definition_json']);
         }
 
+        $followUp = $this->continueAfterToolResult(
+            $conversationId,
+            $toolCallId,
+            $definition,
+            $result,
+            $snapshot?->response_id,
+            $request
+        );
+
         return $this->json([
             'success' => $result->success,
             'conversation_id' => $conversationId,
@@ -148,7 +160,233 @@ class ExecuteToolAction extends BaseChatAction
             'created_contexts' => $createdContexts ?: $result->createdContexts,
             'updated_contexts' => $result->updatedContexts,
             'message' => $result->message,
+            'followup' => $followUp,
+            'pending_tools' => $followUp['pending_tools'] ?? [],
+            'messages' => $manager?->getMessagesForDisplay($conversationId) ?? [],
         ]);
+    }
+
+    private function continueAfterToolResult(
+        int $conversationId,
+        string $toolCallId,
+        ToolDefinition $definition,
+        ToolResult $result,
+        ?string $previousResponseId,
+        \yii\web\Request $request
+    ): array {
+        if ($previousResponseId === null || $previousResponseId === '' || $toolCallId === '') {
+            return ['success' => false, 'skipped' => true, 'reason' => 'missing_previous_response_or_tool_call_id'];
+        }
+
+        $manager = $this->module()?->getConversationManager();
+        $registry = $this->module()?->getToolRegistry();
+        $snapshotRepo = $this->module()?->getToolSnapshotRepository();
+        $conversation = $manager?->getConversation($conversationId);
+        $contexts = $this->module()?->getContextManager()->listContexts($conversationId) ?? [];
+        $model = $this->module()?->resolveModel(null, $conversation?->model) ?? null;
+        $output = [
+            'success' => $result->success,
+            'tool_name' => $definition->name,
+            'data' => $result->data,
+            'error' => $result->error,
+            'message' => $result->message,
+            'created_contexts' => $result->createdContexts,
+            'updated_contexts' => $result->updatedContexts,
+        ];
+
+        $payload = [
+            'model' => $model,
+            'previous_response_id' => $previousResponseId,
+            'input' => [[
+                'type' => 'function_call_output',
+                'call_id' => $toolCallId,
+                'output' => json_encode($output, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ]],
+            'contexts' => $contexts,
+            'metadata' => ['conversation_id' => $conversationId, 'tool_name' => $definition->name],
+        ];
+
+        try {
+            $response = $this->module()?->getAiResponseService()->send($payload) ?? [];
+        } catch (\Throwable $exception) {
+            \Yii::error($exception, __METHOD__);
+            $manager?->addMessage(
+                $conversationId,
+                'assistant',
+                'error',
+                'The AI provider could not process the tool result.',
+                $previousResponseId
+            );
+
+            return ['success' => false, 'error' => 'The AI provider could not process the tool result.'];
+        }
+
+        if (isset($response['error'])) {
+            $messageText = is_array($response['error'])
+                ? (string)($response['error']['message'] ?? 'The AI provider returned an error.')
+                : (string)$response['error'];
+            $manager?->addMessage($conversationId, 'assistant', 'error', $messageText, $previousResponseId);
+            return ['success' => false, 'error' => $messageText];
+        }
+
+        $parsed = $this->module()?->getResponseParser()->parse($response) ?? ['text' => null, 'tool_calls' => [], 'usage' => []];
+        $assistantPayload = $this->module()?->getResponseParser()->parseText((string)($parsed['text'] ?? '')) ?? [];
+        $assistantText = $this->resolveAssistantText($assistantPayload, (string)($parsed['text'] ?? ''));
+        $manager?->addMessage($conversationId, 'assistant', 'message', $assistantText, $parsed['id'] ?? null, null, null, null, $parsed['usage'] ?? []);
+        if ($manager && $conversation) {
+            $this->applyConversationTitleSuggestion($manager, $conversation, $assistantPayload);
+        }
+
+        $questionnaire = $this->normalizeQuestionnaire($assistantPayload['questionnaire'] ?? null);
+        if ($questionnaire !== null) {
+            $manager?->addMessage(
+                $conversationId,
+                'assistant',
+                'questionnaire',
+                json_encode($questionnaire, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                $parsed['id'] ?? null
+            );
+        }
+
+        $toolContext = new \eseperio\aiagent\dto\ToolContext(
+            conversation: $conversation,
+            contexts: $contexts,
+            user: $this->user(),
+            request: $request,
+            model: $model,
+            metadata: ['conversation_id' => $conversationId]
+        );
+        $pendingTools = [];
+        foreach ((array)($parsed['tool_calls'] ?? []) as $toolCall) {
+            $name = (string)($toolCall['name'] ?? '');
+            if ($name === '') {
+                continue;
+            }
+            $registeredTool = $registry?->findResolvedByName($name, $toolContext);
+            $toolDefinition = $registeredTool ?? new ToolDefinition($name, $name, ['type' => 'object', 'properties' => []]);
+            $snapshot = $snapshotRepo?->save($conversationId, $parsed['id'] ?? null, $toolDefinition, [], null);
+            $manager?->addMessage(
+                $conversationId,
+                'assistant',
+                'tool_call',
+                json_encode([
+                    'name' => $name,
+                    'arguments' => $toolCall['arguments'] ?? [],
+                ]),
+                $parsed['id'] ?? null,
+                (string)($toolCall['id'] ?? $snapshot?->id ?? ''),
+                $name,
+                ['snapshot_id' => $snapshot?->id, 'tool_call' => $toolCall]
+            );
+            $pendingTools[] = [
+                'name' => $toolDefinition->name,
+                'tool_call_id' => (string)($toolCall['id'] ?? $snapshot?->id ?? ''),
+                'requires_approval' => $toolDefinition->requiresApproval,
+                'snapshot_id' => $snapshot?->id,
+            ];
+        }
+
+        return [
+            'success' => true,
+            'response_id' => $parsed['id'] ?? null,
+            'message' => $assistantText,
+            'pending_tools' => $pendingTools,
+        ];
+    }
+
+    private function resolveAssistantText(array $payload, string $rawText): string
+    {
+        if (array_key_exists('response', $payload)) {
+            $text = trim((string)$payload['response']);
+            if ($text !== '') {
+                return $text;
+            }
+            if (!empty($payload['questionnaire']['enabled'])) {
+                return trim((string)($payload['questionnaire']['title'] ?? '')) ?: 'Necesito confirmar algunos datos.';
+            }
+        }
+
+        if (array_key_exists('text', $payload)) {
+            $text = trim((string)$payload['text']);
+            if ($text !== '') {
+                return $text;
+            }
+        }
+
+        return trim($rawText) !== '' ? trim($rawText) : '...';
+    }
+
+    private function applyConversationTitleSuggestion(
+        \eseperio\aiagent\services\ConversationManager $manager,
+        \eseperio\aiagent\models\Conversation $conversation,
+        array $payload
+    ): void {
+        $suggestion = trim((string)($payload['conversation_title_suggestion'] ?? ''));
+        if ($suggestion === '' || trim((string)$conversation->title) !== '') {
+            return;
+        }
+
+        $manager->renameConversation((int)$conversation->id, mb_substr($suggestion, 0, 120));
+    }
+
+    private function normalizeQuestionnaire(mixed $questionnaire): ?array
+    {
+        if (!is_array($questionnaire) || empty($questionnaire['enabled'])) {
+            return null;
+        }
+
+        $questions = [];
+        foreach (($questionnaire['questions'] ?? []) as $question) {
+            if (!is_array($question)) {
+                continue;
+            }
+            $label = trim((string)($question['label'] ?? $question['text'] ?? $question['name'] ?? ''));
+            if ($label === '') {
+                continue;
+            }
+            $type = (string)($question['type'] ?? 'text');
+            if (!in_array($type, ['text', 'single_choice', 'multiple_choice'], true)) {
+                $type = 'text';
+            }
+
+            $options = [];
+            foreach (($question['options'] ?? []) as $option) {
+                if (is_array($option)) {
+                    $value = trim((string)($option['value'] ?? $option['label'] ?? ''));
+                    $optionLabel = trim((string)($option['label'] ?? $option['value'] ?? ''));
+                } else {
+                    $value = trim((string)$option);
+                    $optionLabel = $value;
+                }
+                if ($value === '' && $optionLabel === '') {
+                    continue;
+                }
+                $options[] = [
+                    'value' => $value !== '' ? $value : $optionLabel,
+                    'label' => $optionLabel !== '' ? $optionLabel : $value,
+                ];
+            }
+
+            $questions[] = [
+                'id' => trim((string)($question['id'] ?? '')) ?: 'question_' . (count($questions) + 1),
+                'label' => $label,
+                'type' => $type,
+                'required' => (bool)($question['required'] ?? false),
+                'placeholder' => (string)($question['placeholder'] ?? ''),
+                'options' => $type === 'text' ? [] : $options,
+            ];
+        }
+
+        if (!$questions) {
+            return null;
+        }
+
+        return [
+            'enabled' => true,
+            'title' => trim((string)($questionnaire['title'] ?? '')) ?: 'Necesito confirmar algunos datos',
+            'description' => trim((string)($questionnaire['description'] ?? '')),
+            'questions' => $questions,
+        ];
     }
 
     private function persistUnavailableToolResult(

@@ -7,8 +7,22 @@ class FakeOpenAiResponseFactory
     public function create(array $body): array
     {
         $input = json_encode($body['input'] ?? []);
+        if (is_string($input) && str_contains($input, 'function_call_output')) {
+            return $this->afterToolResultResponse();
+        }
         if (is_string($input) && str_contains($input, 'auto-tool-many')) {
             return $this->autoToolManyResponse();
+        }
+        if (is_string($input) && str_contains($input, 'provider-error')) {
+            return [
+                'error' => [
+                    'message' => 'Simulated provider error',
+                    'type' => 'invalid_request_error',
+                ],
+            ];
+        }
+        if (is_string($input) && str_contains($input, 'questionnaire')) {
+            return $this->questionnaireResponse();
         }
         if (is_string($input) && str_contains($input, 'function-call-auto')) {
             return $this->autoFunctionCallResponse();
@@ -52,6 +66,48 @@ class FakeOpenAiResponseFactory
                 'content' => [[
                     'type' => 'output_text',
                     'text' => json_encode(['response' => 'fake-response']),
+                ]],
+            ]],
+            'usage' => ['input_tokens' => 1, 'output_tokens' => 1, 'total_tokens' => 2],
+        ];
+    }
+
+    private function questionnaireResponse(): array
+    {
+        return [
+            'id' => 'resp_fake_questionnaire',
+            'status' => 'completed',
+            'output' => [[
+                'type' => 'message',
+                'content' => [[
+                    'type' => 'output_text',
+                    'text' => json_encode([
+                        'response' => 'Necesito que elijas una opcion para continuar.',
+                        'conversation_title_suggestion' => 'Seleccion de opcion',
+                        'questionnaire' => [
+                            'enabled' => true,
+                            'title' => 'Elige una opcion',
+                            'description' => 'Selecciona la respuesta que encaja mejor.',
+                            'questions' => [[
+                                'id' => 'target',
+                                'label' => 'Que quieres modificar?',
+                                'type' => 'single_choice',
+                                'required' => true,
+                                'placeholder' => '',
+                                'options' => [
+                                    ['value' => 'product', 'label' => 'Producto'],
+                                    ['value' => 'category', 'label' => 'Categoria'],
+                                ],
+                            ], [
+                                'id' => 'details',
+                                'label' => 'Que cambio necesitas?',
+                                'type' => 'text',
+                                'required' => false,
+                                'placeholder' => 'Describe el cambio',
+                                'options' => [],
+                            ]],
+                        ],
+                    ]),
                 ]],
             ]],
             'usage' => ['input_tokens' => 1, 'output_tokens' => 1, 'total_tokens' => 2],

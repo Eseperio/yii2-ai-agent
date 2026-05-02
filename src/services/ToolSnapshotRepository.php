@@ -11,7 +11,8 @@ class ToolSnapshotRepository extends Component
     public function save(int $conversationId, ?string $responseId, ToolDefinition $tool, array $contextFingerprint = [], ?string $requestId = null): ToolSnapshot
     {
         $contextRenderer = new ContextRenderer();
-        $snapshot = new ToolSnapshot();
+        $class = $this->toolSnapshotClass();
+        $snapshot = new $class();
         $snapshot->conversation_id = $conversationId;
         $snapshot->response_id = $responseId;
         $snapshot->tool_name = $tool->name;
@@ -35,7 +36,8 @@ class ToolSnapshotRepository extends Component
 
     public function findOneByResponseAndTool(int $conversationId, ?string $responseId, string $toolName): ?ToolSnapshot
     {
-        return ToolSnapshot::find()
+        $class = $this->toolSnapshotClass();
+        return $class::find()
             ->where([
                 'conversation_id' => $conversationId,
                 'response_id' => $responseId,
@@ -46,7 +48,8 @@ class ToolSnapshotRepository extends Component
 
     public function findOneByConversationAndTool(int $conversationId, string $toolName): ?ToolSnapshot
     {
-        return ToolSnapshot::find()
+        $class = $this->toolSnapshotClass();
+        return $class::find()
             ->where([
                 'conversation_id' => $conversationId,
                 'tool_name' => $toolName,
@@ -55,9 +58,19 @@ class ToolSnapshotRepository extends Component
             ->one();
     }
 
+    public function findOneByIdAndConversation(int $id, int $conversationId): ?ToolSnapshot
+    {
+        $class = $this->toolSnapshotClass();
+        return $class::findOne([
+            'id' => $id,
+            'conversation_id' => $conversationId,
+        ]);
+    }
+
     public function attachResponseIdByRequestId(int $conversationId, string $requestId, ?string $responseId): int
     {
-        $snapshots = ToolSnapshot::find()
+        $class = $this->toolSnapshotClass();
+        $snapshots = $class::find()
             ->where(['conversation_id' => $conversationId])
             ->all();
 
@@ -89,5 +102,10 @@ class ToolSnapshotRepository extends Component
             null,
             $data['metadata'] ?? []
         );
+    }
+
+    private function toolSnapshotClass(): string
+    {
+        return \eseperio\aiagent\Module::resolveActive()?->toolSnapshotClass ?: ToolSnapshot::class;
     }
 }

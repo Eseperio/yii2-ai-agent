@@ -132,6 +132,17 @@ return [
                     ['scope' => 'test']
                 ),
             ],
+            'manuals' => [
+                new \eseperio\aiagent\dto\ManualDefinition(
+                    'test.product.manual',
+                    'Product manual',
+                    'How to create test products.',
+                    'Ask for options, create product, create features, verify state.',
+                    [],
+                    null,
+                    ['topic' => 'product']
+                ),
+            ],
         ],
         'fake-openai' => [
             'class' => \eseperio\aiagent\modules\FakeOpenAiModule::class,

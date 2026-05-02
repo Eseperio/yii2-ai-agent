@@ -24,6 +24,9 @@ class ToolRegistry extends Component
                 }
             }
         }
+        if ($module && ($module->manuals || $module->manualProviders)) {
+            $tools = array_merge($tools, $module->getManualRegistry()->getTools());
+        }
         return array_values(array_filter($tools, fn($tool) => $this->isAvailable($tool, $context)));
     }
 
@@ -39,24 +42,27 @@ class ToolRegistry extends Component
                 $seen[$tool->name] = true;
                 $normalized[] = [
                     'type' => 'function',
-                    'function' => [
-                        'name' => $tool->name,
-                        'description' => $tool->description,
-                        'parameters' => $tool->parameters,
-                        'strict' => true,
-                    ],
+                    'name' => $tool->name,
+                    'description' => $tool->description,
+                    'parameters' => $tool->parameters,
+                    'strict' => (bool)($tool->metadata['strict'] ?? true),
                 ];
                 continue;
             }
-            if (is_array($tool) && isset($tool['type']) && isset($tool['function'])) {
-                $name = $tool['function']['name'] ?? null;
+            if (is_array($tool) && isset($tool['type'])) {
+                $name = $tool['name'] ?? ($tool['function']['name'] ?? null);
                 if (is_string($name)) {
                     if (isset($seen[$name])) {
                         throw new \RuntimeException('Duplicate tool name: ' . $name);
                     }
                     $seen[$name] = true;
                 }
-                $tool['function']['strict'] ??= true;
+                if (isset($tool['function']) && is_array($tool['function'])) {
+                    $tool = array_merge(['type' => $tool['type']], $tool['function']);
+                }
+                if (($tool['type'] ?? null) === 'function') {
+                    $tool['strict'] ??= true;
+                }
                 $normalized[] = $tool;
             }
         }
@@ -108,7 +114,7 @@ class ToolRegistry extends Component
             return (bool)call_user_func($tool->available, $context, $tool);
         }
 
-        if (!empty($tool->contextTypes) && $context->contexts !== []) {
+        if (!empty($tool->contextTypes)) {
             foreach ($context->contexts as $activeContext) {
                 $type = is_object($activeContext) ? ($activeContext->type ?? null) : ($activeContext['type'] ?? null);
                 if (in_array($type, $tool->contextTypes, true)) {

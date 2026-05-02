@@ -4,6 +4,7 @@ namespace eseperio\aiagent\tests\unit;
 
 use eseperio\aiagent\Module;
 use eseperio\aiagent\services\AiResponseService;
+use eseperio\aiagent\services\OpenAiResponsesClient;
 use PHPUnit\Framework\TestCase;
 
 class AiInstructionProviderStub implements \eseperio\aiagent\contracts\InstructionProviderInterface
@@ -13,6 +14,14 @@ class AiInstructionProviderStub implements \eseperio\aiagent\contracts\Instructi
     public function buildInstructions(\eseperio\aiagent\dto\InstructionContext $context): string
     {
         return 'third:' . $context->model;
+    }
+}
+
+class AiInstructionProviderWithoutAvailableStub implements \eseperio\aiagent\contracts\InstructionProviderInterface
+{
+    public function buildInstructions(\eseperio\aiagent\dto\InstructionContext $context): string
+    {
+        return 'without-available:' . $context->model;
     }
 }
 
@@ -63,6 +72,7 @@ class AiResponseServiceTest extends TestCase
     public function testBuildInstructionsCombinesProvidersInOrder(): void
     {
         $captured = [];
+        \Yii::$app->getModule('aiAgent')->baseInstructions = 'base contract';
         \Yii::$app->getModule('aiAgent')->instructionProviders = [
             static function ($context) use (&$captured): string {
                 $captured[] = $context->model;
@@ -88,6 +98,7 @@ class AiResponseServiceTest extends TestCase
         ]);
 
         $this->assertSame('gpt-test', $captured[0]);
+        $this->assertStringStartsWith('base contract', $result);
         $this->assertStringContainsString('first', $result);
         $this->assertStringContainsString('second:1', $result);
         $this->assertStringContainsString('third:gpt-test', $result);
@@ -116,12 +127,36 @@ class AiResponseServiceTest extends TestCase
             'input' => [],
         ]);
 
-        $this->assertSame('third:gpt-test', $result);
+        $this->assertStringContainsString('third:gpt-test', $result);
+        $this->assertStringNotContainsString('first', $result);
+    }
+
+    public function testBuildInstructionsDoesNotPassAvailableToProviderConfig(): void
+    {
+        \Yii::$app->getModule('aiAgent')->instructionProviders = [
+            [
+                'available' => static fn($context): bool => true,
+                'class' => AiInstructionProviderWithoutAvailableStub::class,
+            ],
+        ];
+
+        $service = new AiResponseService();
+        $ref = new \ReflectionClass($service);
+        $method = $ref->getMethod('buildInstructions');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($service, \Yii::$app->getModule('aiAgent'), [
+            'model' => 'gpt-test',
+            'input' => [],
+        ]);
+
+        $this->assertStringContainsString('without-available:gpt-test', $result);
     }
 
     public function testSendRetriesWithoutPreviousResponseIdWhenRejected(): void
     {
         CapturingAiClient::$payloads = [];
+        \Yii::$app->getModule('aiAgent')->baseInstructions = 'base fallback';
         \Yii::$app->getModule('aiAgent')->set('clientFactory', [
             'class' => CapturingAiClientFactory::class,
         ]);
@@ -140,5 +175,64 @@ class AiResponseServiceTest extends TestCase
         $this->assertCount(2, CapturingAiClient::$payloads);
         $this->assertArrayNotHasKey('previous_response_id', CapturingAiClient::$payloads[1]);
         $this->assertArrayNotHasKey('instructions', CapturingAiClient::$payloads[0]);
+        $this->assertStringContainsString('base fallback', CapturingAiClient::$payloads[1]['instructions'] ?? '');
+    }
+
+    public function testSendAddsServiceTierAndDoesNotForwardInternalContexts(): void
+    {
+        CapturingAiClient::$payloads = [];
+        \Yii::$app->getModule('aiAgent')->clientConfig = [
+            'apiKey' => 'test',
+            'serviceTier' => 'flex',
+        ];
+        \Yii::$app->getModule('aiAgent')->set('clientFactory', [
+            'class' => CapturingAiClientFactory::class,
+        ]);
+
+        $service = new AiResponseService();
+        $service->send([
+            'model' => 'gpt-test',
+            'input' => [
+                ['role' => 'user', 'content' => 'hello'],
+            ],
+            'contexts' => [
+                ['type' => 10, 'metadata' => ['id' => 1]],
+            ],
+        ]);
+
+        $this->assertSame('flex', CapturingAiClient::$payloads[0]['service_tier'] ?? null);
+        $this->assertArrayNotHasKey('contexts', CapturingAiClient::$payloads[0]);
+    }
+
+    public function testSendAddsDefaultStructuredResponseFormat(): void
+    {
+        CapturingAiClient::$payloads = [];
+        \Yii::$app->getModule('aiAgent')->set('clientFactory', [
+            'class' => CapturingAiClientFactory::class,
+        ]);
+
+        $service = new AiResponseService();
+        $service->send([
+            'model' => 'gpt-test',
+            'input' => [
+                ['role' => 'user', 'content' => 'hello'],
+            ],
+        ]);
+
+        $format = CapturingAiClient::$payloads[0]['text']['format'] ?? null;
+        $this->assertIsArray($format);
+        $this->assertSame('json_schema', $format['type'] ?? null);
+        $this->assertSame('ai_agent_response', $format['name'] ?? null);
+        $this->assertArrayHasKey('questionnaire', $format['schema']['properties'] ?? []);
+    }
+
+    public function testOpenAiClientAcceptsServiceTierConfig(): void
+    {
+        $client = new OpenAiResponsesClient([
+            'apiKey' => 'test',
+            'serviceTier' => 'flex',
+        ]);
+
+        $this->assertSame('flex', $client->serviceTier);
     }
 }

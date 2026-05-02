@@ -12,9 +12,16 @@ class CreateConversationAction extends BaseChatAction
         }
 
         $request = $this->request();
+        $model = $request->post('model');
+        if (is_string($model) && trim($model) !== '') {
+            if (!$this->can('canUseModel', $this->permissionContext('createConversation', ['model' => $model]))) {
+                return $this->deny('Model not allowed');
+            }
+        }
+
         $conversation = $this->module()?->getConversationManager()->createConversation(
             $request->post('title'),
-            $request->post('model'),
+            $model,
             is_array($request->post('metadata')) ? $request->post('metadata') : [],
             is_array($request->post('contexts')) ? $request->post('contexts') : [],
             $this->resolveCreatedBy()
