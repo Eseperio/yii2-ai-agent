@@ -582,6 +582,14 @@
             image.className = 'ai-agent-context-image';
             image.src = payload.image_url;
             image.alt = '';
+            image.addEventListener('load', function () {
+                window.setTimeout(function () {
+                    var container = wrapper.closest('.ai-agent-messages');
+                    if (container) {
+                        container.scrollTop = container.scrollHeight;
+                    }
+                }, 0);
+            });
             wrapper.appendChild(image);
         }
 
@@ -768,6 +776,20 @@
             window.history.replaceState(window.history.state, '', url.toString());
         }
 
+        function scrollMessagesToBottom() {
+            var scroll = function () {
+                messages.scrollTop = messages.scrollHeight;
+            };
+            scroll();
+            if (window.requestAnimationFrame) {
+                window.requestAnimationFrame(function () {
+                    scroll();
+                    window.requestAnimationFrame(scroll);
+                });
+            }
+            window.setTimeout(scroll, 80);
+        }
+
         function setBusy(value) {
             var changed = state.busy !== value;
             state.busy = value;
@@ -803,7 +825,7 @@
             }
             indicator.appendChild(body);
             messages.appendChild(indicator);
-            messages.scrollTop = messages.scrollHeight;
+            scrollMessagesToBottom();
         }
 
         function scheduleProcessingIndicator() {
@@ -965,7 +987,7 @@
                 messages.appendChild(renderMessage(message, interactionHandlers));
             });
             renderProcessingIndicator();
-            messages.scrollTop = messages.scrollHeight;
+            scrollMessagesToBottom();
             scheduleAutoApprovePendingAction();
         }
 

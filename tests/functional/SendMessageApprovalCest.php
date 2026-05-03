@@ -149,6 +149,15 @@ class SendMessageApprovalCest
         $I->assertTrue($contexts['success'] ?? false);
         $I->assertNotEmpty($contexts['contexts'] ?? []);
 
+        $I->sendGet('/ai-agent/chat/get-history?conversation_id=' . $conversation['id']);
+        $history = json_decode($I->grabResponse(), true);
+        $I->assertTrue($history['success'] ?? false);
+        $I->assertNotEmpty(array_filter($history['messages'] ?? [], static function (array $message): bool {
+            return ($message['message_type'] ?? null) === 'context'
+                && ($message['virtual'] ?? false) === true
+                && str_contains((string)($message['content'] ?? ''), 'Product');
+        }));
+
         $I->sendPost('/ai-agent/chat/continue-conversation', [
             'conversation_id' => $conversation['id'],
         ]);

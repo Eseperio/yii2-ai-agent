@@ -76,23 +76,37 @@ abstract class BaseChatAction extends Action
             return;
         }
 
+        $manager->addMessage(
+            $conversationId,
+            'assistant',
+            'context',
+            json_encode($this->renderContextPreviewPayload($conversationId, $context), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            $responseId
+        );
+    }
+
+    protected function renderContextPreviewPayload(int $conversationId, Context $context): array
+    {
+        $module = $this->module();
+        $conversation = $module?->getConversationManager()->getConversation($conversationId);
+        if (!$module || !$conversation) {
+            return [
+                'type' => $context->type,
+                'id' => $context->id,
+                'title' => $context->label ?: 'Context #' . $context->id,
+            ];
+        }
+
         $renderContext = new ContextRenderContext(
             conversation: $conversation,
             user: $this->user(),
             request: $this->request(),
             metadata: [
                 'conversation_id' => $conversationId,
-                'source' => 'created_context',
+                'source' => 'context_preview',
             ]
         );
 
-        $rendered = $module->getContextRenderer()->render($context, $renderContext);
-        $manager->addMessage(
-            $conversationId,
-            'assistant',
-            'context',
-            json_encode($rendered, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            $responseId
-        );
+        return $module->getContextRenderer()->render($context, $renderContext);
     }
 }
