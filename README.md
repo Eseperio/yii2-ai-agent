@@ -121,6 +121,17 @@ Los renderizadores de contexto se registran en `Module::$contextRenderers`. Pued
 Ejemplo de instrucciones por aplicacion:
 
 ```php
+'applicationContext' => 'La aplicacion gestiona productos configurables de imprenta para tiendas B2B y B2C.',
+'applicationContextMaxLength' => 1200,
+```
+
+`applicationContext` es el sitio recomendado para explicar de que va la aplicacion, su publico, reglas generales de negocio y vocabulario habitual. Puede ser un string o un callable. Tambien puedes usar `applicationContextProvider` si prefieres una clase/configuracion Yii que devuelva contexto dinamico.
+
+Este contexto se anade solo cuando la libreria envia instrucciones completas a OpenAI. En continuaciones con `previous_response_id` no se reenvia, para reducir tokens. Mantelo breve; para procedimientos largos usa `manualProviders`, y para datos dependientes del contexto usa `instructionProviders` con `available`.
+
+Ejemplo de instrucciones por aplicacion usando providers:
+
+```php
 'instructionProviders' => [
     static function (\eseperio\aiagent\dto\InstructionContext $context): string {
         return 'Eres un asistente general para la aplicacion.';

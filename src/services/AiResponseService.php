@@ -92,6 +92,9 @@ class AiResponseService extends Component
         if (trim($module->baseInstructions) !== '') {
             $parts[] = $module->baseInstructions;
         }
+        if (method_exists($module, 'buildApplicationContextInstructions')) {
+            $parts[] = $module->buildApplicationContextInstructions($instructionContext);
+        }
         foreach ($module->instructionProviders as $provider) {
             if (!$this->isInstructionProviderAvailable($provider, $instructionContext)) {
                 continue;

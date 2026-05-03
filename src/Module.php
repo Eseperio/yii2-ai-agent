@@ -27,6 +27,20 @@ class Module extends BaseModule
     public array $manuals = [];
     public array $manualProviders = [];
     public array $instructionProviders = [];
+    /**
+     * Short application-level context sent only when full instructions are sent.
+     *
+     * @var string|callable|null
+     */
+    public $applicationContext = null;
+    /**
+     * Optional dynamic context provider. It may be a callable, Yii config, or
+     * class name with __invoke() or buildApplicationContext().
+     *
+     * @var mixed
+     */
+    public $applicationContextProvider = null;
+    public int $applicationContextMaxLength = 1600;
     public array $contextRenderers = [];
     public array $welcomeMessages = [
         'Hola, ¿qué hacemos hoy?',
@@ -237,6 +251,68 @@ TEXT;
 
         $base = $conversationId !== null && $conversationId > 0 ? $conversationId - 1 : 0;
         return $messages[$base % count($messages)];
+    }
+
+    public function resolveApplicationContext(?\eseperio\aiagent\dto\InstructionContext $context = null): ?string
+    {
+        $value = null;
+
+        if ($this->applicationContextProvider !== null) {
+            $provider = $this->resolveApplicationContextProvider($this->applicationContextProvider);
+            if (is_callable($provider)) {
+                $value = call_user_func($provider, $context, $this);
+            } elseif (is_object($provider) && method_exists($provider, 'buildApplicationContext')) {
+                $value = $provider->buildApplicationContext($context, $this);
+            }
+        } elseif (is_callable($this->applicationContext)) {
+            $value = call_user_func($this->applicationContext, $context, $this);
+        } elseif (is_string($this->applicationContext)) {
+            $value = $this->applicationContext;
+        }
+
+        if (!is_scalar($value)) {
+            return null;
+        }
+
+        $value = trim((string)$value);
+        if ($value === '') {
+            return null;
+        }
+
+        $value = preg_replace('/\s+/', ' ', $value);
+        $maxLength = max(0, (int)$this->applicationContextMaxLength);
+        if ($maxLength > 0 && mb_strlen($value, 'UTF-8') > $maxLength) {
+            $value = mb_substr($value, 0, $maxLength, 'UTF-8');
+        }
+
+        return $value;
+    }
+
+    public function buildApplicationContextInstructions(?\eseperio\aiagent\dto\InstructionContext $context = null): ?string
+    {
+        $applicationContext = $this->resolveApplicationContext($context);
+        if ($applicationContext === null) {
+            return null;
+        }
+
+        return "Application context:\n" . $applicationContext;
+    }
+
+    private function resolveApplicationContextProvider(mixed $provider): mixed
+    {
+        if (is_callable($provider) || is_object($provider)) {
+            return $provider;
+        }
+
+        if (is_array($provider)) {
+            return \Yii::createObject($provider);
+        }
+
+        if (is_string($provider) && class_exists($provider)) {
+            return \Yii::createObject($provider);
+        }
+
+        return $provider;
     }
 
     public static function resolveActive(): ?self

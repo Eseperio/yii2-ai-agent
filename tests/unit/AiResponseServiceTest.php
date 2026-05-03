@@ -104,6 +104,31 @@ class AiResponseServiceTest extends TestCase
         $this->assertStringContainsString('third:gpt-test', $result);
     }
 
+    public function testBuildInstructionsIncludesApplicationContextOnce(): void
+    {
+        $module = \Yii::$app->getModule('aiAgent');
+        $module->baseInstructions = 'base contract';
+        $module->applicationContext = static function ($context): string {
+            return 'This app sells configurable print products. Model: ' . $context->model;
+        };
+        $module->applicationContextMaxLength = 48;
+
+        $service = new AiResponseService();
+        $ref = new \ReflectionClass($service);
+        $method = $ref->getMethod('buildInstructions');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($service, $module, [
+            'model' => 'gpt-test',
+            'input' => [['role' => 'user', 'content' => 'hello']],
+        ]);
+
+        $this->assertStringContainsString('base contract', $result);
+        $this->assertStringContainsString('Application context:', $result);
+        $this->assertStringContainsString('This app sells configurable print products.', $result);
+        $this->assertStringNotContainsString('Model: gpt-test', $result);
+    }
+
     public function testBuildInstructionsSkipsUnavailableProviders(): void
     {
         \Yii::$app->getModule('aiAgent')->instructionProviders = [
@@ -157,6 +182,7 @@ class AiResponseServiceTest extends TestCase
     {
         CapturingAiClient::$payloads = [];
         \Yii::$app->getModule('aiAgent')->baseInstructions = 'base fallback';
+        \Yii::$app->getModule('aiAgent')->applicationContext = 'fallback app context';
         \Yii::$app->getModule('aiAgent')->set('clientFactory', [
             'class' => CapturingAiClientFactory::class,
         ]);
@@ -176,6 +202,7 @@ class AiResponseServiceTest extends TestCase
         $this->assertArrayNotHasKey('previous_response_id', CapturingAiClient::$payloads[1]);
         $this->assertArrayNotHasKey('instructions', CapturingAiClient::$payloads[0]);
         $this->assertStringContainsString('base fallback', CapturingAiClient::$payloads[1]['instructions'] ?? '');
+        $this->assertStringContainsString('fallback app context', CapturingAiClient::$payloads[1]['instructions'] ?? '');
     }
 
     public function testSendAddsServiceTierAndDoesNotForwardInternalContexts(): void
