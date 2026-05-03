@@ -115,10 +115,13 @@ class SendMessageAction extends BaseChatAction
         }
 
         $parsed = $this->module()?->getResponseParser()->parse($response) ?? ['text' => null, 'tool_calls' => [], 'usage' => []];
+        $toolCalls = is_array($parsed['tool_calls'] ?? null) ? $parsed['tool_calls'] : [];
         $assistantPayload = $this->module()?->getResponseParser()->parseText((string)($parsed['text'] ?? '')) ?? [];
         $assistantText = $this->resolveAssistantText($assistantPayload, (string)($parsed['text'] ?? ''));
-        $manager->addMessage($conversationId, 'assistant', 'message', $assistantText, $parsed['id'] ?? null, null, null, null, $parsed['usage'] ?? []);
-        $this->applyConversationTitleSuggestion($manager, $conversation, $assistantPayload);
+        if ($assistantText !== '...' || !$toolCalls) {
+            $manager->addMessage($conversationId, 'assistant', 'message', $assistantText, $parsed['id'] ?? null, null, null, null, $parsed['usage'] ?? []);
+            $this->applyConversationTitleSuggestion($manager, $conversation, $assistantPayload);
+        }
 
         $questionnaire = $this->normalizeQuestionnaire($assistantPayload['questionnaire'] ?? null);
         if ($questionnaire !== null) {
@@ -131,7 +134,6 @@ class SendMessageAction extends BaseChatAction
             );
         }
 
-        $toolCalls = is_array($parsed['tool_calls'] ?? null) ? $parsed['tool_calls'] : [];
         $pendingTools = [];
         $autoExecutedTools = [];
         $autoExecutionLimit = $this->module()?->getAutoExecutionMaxIterations() ?? 8;
@@ -153,6 +155,10 @@ class SendMessageAction extends BaseChatAction
                     );
                     $snapshot = $repo->findOneByResponseAndTool($conversationId, $parsed['id'] ?? null, $name)
                         ?? $repo->save($conversationId, $parsed['id'] ?? null, $definition, [], $requestId);
+                    $toolCallId = trim((string)($toolCall['id'] ?? ''));
+                    if ($toolCallId === '') {
+                        $toolCallId = (string)$snapshot->id;
+                    }
                     $manager->addMessage(
                         $conversationId,
                         'assistant',
@@ -162,14 +168,14 @@ class SendMessageAction extends BaseChatAction
                             'arguments' => $toolCall['arguments'] ?? [],
                         ]),
                         $parsed['id'] ?? null,
-                        (string)($toolCall['id'] ?? $snapshot->id),
+                        $toolCallId,
                         $name,
                         ['snapshot_id' => $snapshot->id, 'tool_call' => $toolCall]
                     );
                     if ($definition->requiresApproval) {
                         $pendingTools[] = [
                             'name' => $definition->name,
-                            'tool_call_id' => (string)($toolCall['id'] ?? $snapshot->id),
+                            'tool_call_id' => $toolCallId,
                             'requires_approval' => true,
                             'snapshot_id' => $snapshot->id,
                         ];
@@ -177,7 +183,7 @@ class SendMessageAction extends BaseChatAction
                         if ($autoExecutionCount >= $autoExecutionLimit) {
                             $pendingTools[] = [
                                 'name' => $definition->name,
-                                'tool_call_id' => (string)($toolCall['id'] ?? $snapshot->id),
+                                'tool_call_id' => $toolCallId,
                                 'requires_approval' => false,
                                 'snapshot_id' => $snapshot->id,
                                 'reason' => 'auto_execution_limit_reached',
@@ -188,7 +194,7 @@ class SendMessageAction extends BaseChatAction
                             $definition,
                             $snapshot,
                             $conversationId,
-                            (string)($toolCall['id'] ?? $snapshot->id),
+                            $toolCallId,
                             is_array($toolCall['arguments'] ?? null) ? $toolCall['arguments'] : [],
                             $request
                         ) : null;
@@ -455,10 +461,13 @@ class SendMessageAction extends BaseChatAction
         }
 
         $parsed = $this->module()?->getResponseParser()->parse($response) ?? ['text' => null, 'tool_calls' => [], 'usage' => []];
+        $toolCalls = is_array($parsed['tool_calls'] ?? null) ? $parsed['tool_calls'] : [];
         $assistantPayload = $this->module()?->getResponseParser()->parseText((string)($parsed['text'] ?? '')) ?? [];
         $assistantText = $this->resolveAssistantText($assistantPayload, (string)($parsed['text'] ?? ''));
-        $manager?->addMessage($conversationId, 'assistant', 'message', $assistantText, $parsed['id'] ?? null, null, null, null, $parsed['usage'] ?? []);
-        if ($manager && $conversation) {
+        if ($assistantText !== '...' || !$toolCalls) {
+            $manager?->addMessage($conversationId, 'assistant', 'message', $assistantText, $parsed['id'] ?? null, null, null, null, $parsed['usage'] ?? []);
+        }
+        if ($assistantText !== '...' && $manager && $conversation) {
             $this->applyConversationTitleSuggestion($manager, $conversation, $assistantPayload);
         }
 
@@ -482,7 +491,7 @@ class SendMessageAction extends BaseChatAction
             metadata: ['conversation_id' => $conversationId]
         );
         $pendingTools = [];
-        foreach ((array)($parsed['tool_calls'] ?? []) as $toolCall) {
+        foreach ($toolCalls as $toolCall) {
             $name = (string)($toolCall['name'] ?? '');
             if ($name === '') {
                 continue;
@@ -490,6 +499,10 @@ class SendMessageAction extends BaseChatAction
             $registeredTool = $registry?->findResolvedByName($name, $toolContext);
             $toolDefinition = $registeredTool ?? new \eseperio\aiagent\dto\ToolDefinition($name, $name, ['type' => 'object', 'properties' => []]);
             $snapshot = $snapshotRepo?->save($conversationId, $parsed['id'] ?? null, $toolDefinition, [], null);
+            $toolCallId = trim((string)($toolCall['id'] ?? ''));
+            if ($toolCallId === '') {
+                $toolCallId = (string)($snapshot?->id ?? '');
+            }
             $manager?->addMessage(
                 $conversationId,
                 'assistant',
@@ -499,13 +512,13 @@ class SendMessageAction extends BaseChatAction
                     'arguments' => $toolCall['arguments'] ?? [],
                 ]),
                 $parsed['id'] ?? null,
-                (string)($toolCall['id'] ?? $snapshot?->id ?? ''),
+                $toolCallId,
                 $name,
                 ['snapshot_id' => $snapshot?->id, 'tool_call' => $toolCall]
             );
             $pendingTools[] = [
                 'name' => $toolDefinition->name,
-                'tool_call_id' => (string)($toolCall['id'] ?? $snapshot?->id ?? ''),
+                'tool_call_id' => $toolCallId,
                 'requires_approval' => $toolDefinition->requiresApproval,
                 'snapshot_id' => $snapshot?->id,
             ];

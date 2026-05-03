@@ -62,8 +62,19 @@ class WidgetTest extends TestCase
         $this->assertTrue($props['autoOpen']);
         $this->assertFalse($props['showConversationList']);
         $this->assertSame('window.onToolsExecuted', $props['toolsExecutedCallback']);
+        $this->assertCount(20, $props['welcomeMessages']);
+        $this->assertSame('Hola, ¿qué hacemos hoy?', $props['welcomeMessages'][0]);
         $this->assertTrue($props['permissions']['canViewChat']);
         $this->assertTrue($props['permissions']['canUseModel']);
+    }
+
+    public function testModuleAlternatesWelcomeMessageByConversationId(): void
+    {
+        $module = \Yii::$app->getModule('aiAgent');
+
+        $this->assertSame('Hola, ¿qué hacemos hoy?', $module->resolveWelcomeMessage(1));
+        $this->assertSame('Hola, ¿por dónde empezamos?', $module->resolveWelcomeMessage(2));
+        $this->assertSame('Hola, ¿qué hacemos hoy?', $module->resolveWelcomeMessage(21));
     }
 
     public function testRunReturnsEmptyWhenModuleDisabled(): void

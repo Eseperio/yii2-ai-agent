@@ -553,6 +553,9 @@
 
     function renderMessage(message, handlers) {
         var node = el('article', 'ai-agent-message ai-agent-message-' + (message.role || 'assistant'));
+        if (message.virtual) {
+            node.classList.add('ai-agent-message-virtual');
+        }
         var body = el('div', 'ai-agent-message-body');
         if (message.message_type === 'questionnaire') {
             node.classList.add('ai-agent-message-questionnaire');
@@ -572,6 +575,19 @@
             node.setAttribute('data-message-type', message.message_type);
         }
         return node;
+    }
+
+    function resolveWelcomeMessage(props, conversationId) {
+        var items = Array.isArray(props.welcomeMessages) ? props.welcomeMessages.filter(function (message) {
+            return typeof message === 'string' && message.trim() !== '';
+        }) : [];
+        if (!items.length) {
+            return '';
+        }
+
+        var id = Number(conversationId || 0);
+        var index = id > 0 ? (id - 1) % items.length : 0;
+        return items[index];
     }
 
     function init(node) {
@@ -796,8 +812,19 @@
         }
 
         function renderMessages(items) {
-            state.lastMessages = items || [];
+            var sourceMessages = items || [];
+            var welcomeMessage = sourceMessages.length === 0 ? resolveWelcomeMessage(props, state.conversationId) : '';
+            state.lastMessages = sourceMessages;
             var preparedMessages = prepareMessagesForRender(state.lastMessages);
+            if (welcomeMessage !== '') {
+                preparedMessages.unshift({
+                    id: 'welcome-' + (state.conversationId || 'new'),
+                    role: 'assistant',
+                    message_type: 'message',
+                    content: welcomeMessage,
+                    virtual: true
+                });
+            }
             var interactionHandlers = {
                 uiState: state.questionnaireUi,
                 refresh: function () {

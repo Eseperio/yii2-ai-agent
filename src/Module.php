@@ -28,6 +28,28 @@ class Module extends BaseModule
     public array $manualProviders = [];
     public array $instructionProviders = [];
     public array $contextRenderers = [];
+    public array $welcomeMessages = [
+        'Hola, ¿qué hacemos hoy?',
+        'Hola, ¿por dónde empezamos?',
+        'Buenas, ¿qué idea traes hoy?',
+        'Hola, cuéntame qué quieres construir.',
+        'Buenas, dime qué necesitas y lo vemos.',
+        'Hola, ¿en qué te ayudo hoy?',
+        'Buenas, ¿qué quieres resolver?',
+        'Hola, dime qué tienes en mente.',
+        'Buenas, ¿qué preparamos hoy?',
+        'Hola, ¿qué quieres mejorar?',
+        'Buenas, cuéntame el objetivo.',
+        'Hola, ¿qué tarea tenemos por delante?',
+        'Buenas, ¿qué quieres crear?',
+        'Hola, dime la idea y avanzamos.',
+        'Buenas, ¿qué necesitas preparar?',
+        'Hola, ¿qué quieres revisar?',
+        'Buenas, ¿qué hacemos ahora?',
+        'Hola, te escucho.',
+        'Buenas, dime qué quieres conseguir.',
+        'Hola, ¿qué plan tienes hoy?',
+    ];
     public string $baseInstructions = <<<'TEXT'
 You are an AI assistant embedded in a Yii2 application through the yii2-ai-agent module.
 
@@ -201,6 +223,20 @@ TEXT;
     public function getAutoExecutionMaxIterations(): int
     {
         return max(1, $this->autoExecutionMaxIterations);
+    }
+
+    public function resolveWelcomeMessage(?int $conversationId = null): string
+    {
+        $messages = array_values(array_filter(
+            $this->welcomeMessages,
+            static fn($message): bool => is_string($message) && trim($message) !== ''
+        ));
+        if ($messages === []) {
+            return '';
+        }
+
+        $base = $conversationId !== null && $conversationId > 0 ? $conversationId - 1 : 0;
+        return $messages[$base % count($messages)];
     }
 
     public static function resolveActive(): ?self

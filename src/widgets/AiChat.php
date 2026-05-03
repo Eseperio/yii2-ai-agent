@@ -80,6 +80,10 @@ class AiChat extends Widget
             'autoOpen' => $this->autoOpen,
             'showConversationList' => $this->showConversationList,
             'toolsExecutedCallback' => $this->toolsExecutedCallback,
+            'welcomeMessages' => array_values(array_filter(
+                $module->welcomeMessages,
+                static fn($message): bool => is_string($message) && trim($message) !== ''
+            )),
             'permissions' => [
                 'canViewChat' => true,
                 'canCreateChat' => $module->getPermissionChecker()->canCreateChat(new PermissionContext(action: 'widget', user: $this->getViewUser())),
