@@ -71,6 +71,11 @@ class SendMessageApprovalCest
         }));
         $I->assertNotEmpty(array_filter($history['messages'] ?? [], static function (array $message): bool {
             return ($message['role'] ?? null) === 'assistant'
+                && ($message['message_type'] ?? null) === 'context'
+                && str_contains((string)($message['content'] ?? ''), 'Created from tool');
+        }));
+        $I->assertNotEmpty(array_filter($history['messages'] ?? [], static function (array $message): bool {
+            return ($message['role'] ?? null) === 'assistant'
                 && ($message['message_type'] ?? null) === 'message'
                 && ($message['content'] ?? null) === 'fake-after-tool-result';
         }));

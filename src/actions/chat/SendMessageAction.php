@@ -170,7 +170,12 @@ class SendMessageAction extends BaseChatAction
                         $parsed['id'] ?? null,
                         $toolCallId,
                         $name,
-                        ['snapshot_id' => $snapshot->id, 'tool_call' => $toolCall]
+                        [
+                            'snapshot_id' => $snapshot->id,
+                            'tool_call' => $toolCall,
+                            'tool_metadata' => $definition->metadata,
+                            'requires_approval' => $definition->requiresApproval,
+                        ]
                     );
                     if ($definition->requiresApproval) {
                         $pendingTools[] = [
@@ -367,6 +372,7 @@ class SendMessageAction extends BaseChatAction
                     (int)($createdContext['sort_order'] ?? 0)
                 );
                 $createdContexts[] = $persistedContext->toArray();
+                $this->addContextPreviewMessage($conversationId, $persistedContext, $snapshot->response_id);
             }
         }
         $this->module()?->getConversationManager()->addMessage(
@@ -514,7 +520,12 @@ class SendMessageAction extends BaseChatAction
                 $parsed['id'] ?? null,
                 $toolCallId,
                 $name,
-                ['snapshot_id' => $snapshot?->id, 'tool_call' => $toolCall]
+                [
+                    'snapshot_id' => $snapshot?->id,
+                    'tool_call' => $toolCall,
+                    'tool_metadata' => $toolDefinition->metadata,
+                    'requires_approval' => $toolDefinition->requiresApproval,
+                ]
             );
             $pendingTools[] = [
                 'name' => $toolDefinition->name,

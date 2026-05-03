@@ -3,6 +3,8 @@
 namespace eseperio\aiagent\actions\chat;
 
 use eseperio\aiagent\dto\PermissionContext;
+use eseperio\aiagent\dto\ContextRenderContext;
+use eseperio\aiagent\models\Context;
 use yii\base\Action;
 use yii\web\Response;
 
@@ -59,5 +61,38 @@ abstract class BaseChatAction extends Action
     protected function can(string $method, PermissionContext $context): bool
     {
         return $this->module()?->getPermissionChecker()->{$method}($context) ?? false;
+    }
+
+    protected function addContextPreviewMessage(int $conversationId, Context $context, ?string $responseId = null): void
+    {
+        $module = $this->module();
+        $manager = $module?->getConversationManager();
+        if (!$module || !$manager) {
+            return;
+        }
+
+        $conversation = $manager->getConversation($conversationId);
+        if (!$conversation) {
+            return;
+        }
+
+        $renderContext = new ContextRenderContext(
+            conversation: $conversation,
+            user: $this->user(),
+            request: $this->request(),
+            metadata: [
+                'conversation_id' => $conversationId,
+                'source' => 'created_context',
+            ]
+        );
+
+        $rendered = $module->getContextRenderer()->render($context, $renderContext);
+        $manager->addMessage(
+            $conversationId,
+            'assistant',
+            'context',
+            json_encode($rendered, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            $responseId
+        );
     }
 }

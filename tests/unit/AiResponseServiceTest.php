@@ -129,6 +129,29 @@ class AiResponseServiceTest extends TestCase
         $this->assertStringNotContainsString('Model: gpt-test', $result);
     }
 
+    public function testBuildInstructionsIgnoresEmptyOptionalParts(): void
+    {
+        $module = \Yii::$app->getModule('aiAgent');
+        $module->baseInstructions = '';
+        $module->applicationContext = null;
+        $module->instructionProviders = [
+            static fn(): ?string => null,
+            static fn(): string => '  usable instructions  ',
+        ];
+
+        $service = new AiResponseService();
+        $ref = new \ReflectionClass($service);
+        $method = $ref->getMethod('buildInstructions');
+        $method->setAccessible(true);
+
+        $result = $method->invoke($service, $module, [
+            'model' => 'gpt-test',
+            'input' => [['role' => 'user', 'content' => 'hello']],
+        ]);
+
+        $this->assertSame('usable instructions', $result);
+    }
+
     public function testBuildInstructionsSkipsUnavailableProviders(): void
     {
         \Yii::$app->getModule('aiAgent')->instructionProviders = [
@@ -229,6 +252,29 @@ class AiResponseServiceTest extends TestCase
 
         $this->assertSame('flex', CapturingAiClient::$payloads[0]['service_tier'] ?? null);
         $this->assertArrayNotHasKey('contexts', CapturingAiClient::$payloads[0]);
+    }
+
+    public function testSendDoesNotAddRoleToFunctionCallOutputItems(): void
+    {
+        CapturingAiClient::$payloads = [];
+        \Yii::$app->getModule('aiAgent')->set('clientFactory', [
+            'class' => CapturingAiClientFactory::class,
+        ]);
+
+        $service = new AiResponseService();
+        $service->send([
+            'model' => 'gpt-test',
+            'input' => [
+                [
+                    'type' => 'function_call_output',
+                    'call_id' => 'call_123',
+                    'output' => '{"success":true}',
+                ],
+            ],
+        ]);
+
+        $this->assertSame('function_call_output', CapturingAiClient::$payloads[0]['input'][0]['type'] ?? null);
+        $this->assertArrayNotHasKey('role', CapturingAiClient::$payloads[0]['input'][0]);
     }
 
     public function testSendAddsDefaultStructuredResponseFormat(): void

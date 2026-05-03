@@ -50,6 +50,7 @@ class WidgetTest extends TestCase
         $widget->apiUrls = ['/api/chat'];
         $widget->autoOpen = true;
         $widget->showConversationList = false;
+        $widget->conversationUrlParam = 'chat_id';
         $widget->toolsExecutedCallback = 'window.onToolsExecuted';
 
         $props = $widget->exposeProps();
@@ -61,6 +62,7 @@ class WidgetTest extends TestCase
         $this->assertSame(['/api/chat'], $props['apiUrls']);
         $this->assertTrue($props['autoOpen']);
         $this->assertFalse($props['showConversationList']);
+        $this->assertSame('chat_id', $props['conversationUrlParam']);
         $this->assertSame('window.onToolsExecuted', $props['toolsExecutedCallback']);
         $this->assertCount(20, $props['welcomeMessages']);
         $this->assertSame('Hola, ¿qué hacemos hoy?', $props['welcomeMessages'][0]);

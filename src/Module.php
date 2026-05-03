@@ -73,7 +73,7 @@ Interaction contract:
 - Never put selectable options, "reply A/B", numbered menus, raw JSON, tool names, tool arguments, tool ids, or internal markers in `response`.
 - If you need the user to answer a question, choose between options, disambiguate, confirm missing data, or provide more details, use `questionnaire.enabled=true`.
 - Put every user-facing question inside `questionnaire.questions`. Use `single_choice`, `multiple_choice`, or `text` as appropriate.
-- When `questionnaire.enabled=true`, `response` should only introduce why more information is needed; the actual questions and options must be in `questionnaire`.
+- When `questionnaire.enabled=true`, `response` must be brief: one sentence that introduces why more information is needed. The actual questions and options must be only in `questionnaire`.
 - If the user just answered a questionnaire, continue from those answers. If more information is still required, return a new questionnaire instead of asking in prose.
 - If no user question is needed, set `questionnaire.enabled=false`, `title=""`, `description=""`, and `questions=[]`.
 

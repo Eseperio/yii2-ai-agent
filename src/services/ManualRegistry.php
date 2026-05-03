@@ -50,7 +50,7 @@ class ManualRegistry extends Component
                 'yii2-ai-agent-manuals',
                 [],
                 null,
-                ['readOnly' => true]
+                ['readOnly' => true, 'internal' => true, 'hidden' => true]
             ),
             new ToolDefinition(
                 'read_agent_manual',
@@ -68,7 +68,7 @@ class ManualRegistry extends Component
                 'yii2-ai-agent-manuals',
                 [],
                 null,
-                ['readOnly' => true]
+                ['readOnly' => true, 'internal' => true, 'hidden' => true]
             ),
         ];
     }

@@ -27,6 +27,7 @@ class AiChat extends Widget
     public ?int $conversationId = null;
     public bool $autoOpen = false;
     public bool $showConversationList = true;
+    public string $conversationUrlParam = 'conversation_id';
     public array $htmlOptions = [];
     public ?string $toolsExecutedCallback = null;
 
@@ -79,6 +80,7 @@ class AiChat extends Widget
             'apiUrls' => $this->resolveApiUrls(),
             'autoOpen' => $this->autoOpen,
             'showConversationList' => $this->showConversationList,
+            'conversationUrlParam' => $this->conversationUrlParam,
             'toolsExecutedCallback' => $this->toolsExecutedCallback,
             'welcomeMessages' => array_values(array_filter(
                 $module->welcomeMessages,

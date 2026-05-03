@@ -399,6 +399,8 @@
         skip.addEventListener('click', function () {
             if (window.confirm('Seguro que quieres saltar este formulario?')) {
                 message.skipped = true;
+                cardState.skipped = true;
+                handlers.refresh();
                 handlers.submit(questionnaireMarker(message.response_id || message.id, 'skipped') + '\nHe decidido saltar el formulario y continuar sin esos datos.');
             }
         });
@@ -449,6 +451,8 @@
                 return;
             }
             message.submitted = true;
+            cardState.submitted = true;
+            handlers.refresh();
             handlers.submit(buildQuestionnaireSummary(message, questions, cardState));
         });
 
@@ -471,17 +475,36 @@
     }
 
     function parseMessageMetadata(message) {
-        if (!message || !message.metadata) {
+        if (!message) {
             return {};
         }
-        if (typeof message.metadata === 'object') {
-            return message.metadata;
+        var raw = message.metadata || message.tool_payload;
+        if (!raw) {
+            return {};
+        }
+        if (typeof raw === 'object') {
+            return raw;
         }
         try {
-            return JSON.parse(message.metadata || '{}');
+            return JSON.parse(raw || '{}');
         } catch (error) {
             return {};
         }
+    }
+
+    function isHiddenToolMessage(message) {
+        var metadata = parseMessageMetadata(message);
+        var toolMetadata = metadata.tool_metadata || {};
+        var payload = parseMessageJson(message.content);
+        var toolName = String(payload.name || message.tool_name || '');
+        var hiddenNames = {
+            list_agent_manuals: true,
+            read_agent_manual: true,
+            search_entities: true,
+            get_active_context: true,
+            list_taxes: true
+        };
+        return toolMetadata.hidden === true || toolMetadata.internal === true || metadata.hidden === true || metadata.internal === true || hiddenNames[toolName] === true;
     }
 
     function humanizeToolName(name) {
@@ -551,6 +574,53 @@
         return wrapper;
     }
 
+    function renderContextPreview(message) {
+        var payload = parseMessageJson(message.content);
+        var wrapper = el('article', 'ai-agent-context ai-agent-context-inline');
+        if (payload.image_url) {
+            var image = document.createElement('img');
+            image.className = 'ai-agent-context-image';
+            image.src = payload.image_url;
+            image.alt = '';
+            wrapper.appendChild(image);
+        }
+
+        var content = el('div', 'ai-agent-context-content');
+        if (payload.type_label) {
+            content.appendChild(el('div', 'ai-agent-context-kicker', payload.type_label));
+        }
+        content.appendChild(el('h4', 'ai-agent-context-title', payload.title || 'Contexto'));
+        if (payload.excerpt) {
+            content.appendChild(el('p', 'ai-agent-context-excerpt', payload.excerpt));
+        }
+        if (Array.isArray(payload.badges) && payload.badges.length > 0) {
+            var badges = el('div', 'ai-agent-context-badges');
+            payload.badges.forEach(function (badge) {
+                badges.appendChild(el('span', '', badge));
+            });
+            content.appendChild(badges);
+        }
+        if (payload.action_url || payload.secondary_url) {
+            var actions = el('div', 'ai-agent-context-actions');
+            if (payload.action_url) {
+                var action = el('a', '', payload.action_label || 'Abrir');
+                action.href = payload.action_url;
+                actions.appendChild(action);
+            }
+            if (payload.secondary_url) {
+                var secondary = el('a', '', payload.secondary_label || 'Ver');
+                secondary.href = payload.secondary_url;
+                secondary.target = '_blank';
+                secondary.rel = 'noopener noreferrer';
+                actions.appendChild(secondary);
+            }
+            content.appendChild(actions);
+        }
+
+        wrapper.appendChild(content);
+        return wrapper;
+    }
+
     function renderMessage(message, handlers) {
         var node = el('article', 'ai-agent-message ai-agent-message-' + (message.role || 'assistant'));
         if (message.virtual) {
@@ -567,6 +637,9 @@
         } else if (message.message_type === 'tool_call') {
             node.classList.add('ai-agent-message-action');
             body.appendChild(renderToolAction(message, handlers));
+        } else if (message.message_type === 'context') {
+            node.classList.add('ai-agent-message-context');
+            body.appendChild(renderContextPreview(message));
         } else {
             body.textContent = message.role === 'user' ? stripQuestionnaireMarker(message.content) : (message.content || '');
         }
@@ -594,8 +667,10 @@
         var props = parseProps(node);
         var urls = props.apiUrls || {};
         var permissions = props.permissions || {};
+        var conversationUrlParam = String(props.conversationUrlParam || 'conversation_id').trim();
+        var initialConversationId = props.conversationId || readConversationIdFromUrl(conversationUrlParam);
         var state = {
-            conversationId: props.conversationId || null,
+            conversationId: initialConversationId || null,
             busy: false,
             questionnaireBlocked: false,
             questionnaireUi: {},
@@ -670,10 +745,37 @@
             return urls[name] || fallback || '';
         }
 
+        function readConversationIdFromUrl(paramName) {
+            if (!paramName || !window.location || !window.URLSearchParams) {
+                return null;
+            }
+            var value = new URLSearchParams(window.location.search).get(paramName);
+            var id = Number(value || 0);
+            return id > 0 ? id : null;
+        }
+
+        function syncConversationIdToUrl(conversationId) {
+            if (!conversationUrlParam || !window.history || !window.location || !window.URL) {
+                return;
+            }
+            var url = new URL(window.location.href);
+            var id = Number(conversationId || 0);
+            if (id > 0) {
+                url.searchParams.set(conversationUrlParam, String(id));
+            } else {
+                url.searchParams.delete(conversationUrlParam);
+            }
+            window.history.replaceState(window.history.state, '', url.toString());
+        }
+
         function setBusy(value) {
+            var changed = state.busy !== value;
             state.busy = value;
             updateComposerState();
             newButton.disabled = value || permissions.canCreateChat === false;
+            if (changed && state.lastMessages.length > 0) {
+                renderMessages(state.lastMessages);
+            }
             if (!value) {
                 scheduleAutoApprovePendingAction();
             }
@@ -766,13 +868,15 @@
                 }
                 if (clone.message_type === 'questionnaire') {
                     var key = responseMarkerKey(clone.response_id || clone.id);
-                    clone.submitted = questionnaireStates[key] === 'submitted';
-                    clone.skipped = questionnaireStates[key] === 'skipped';
+                    var localQuestionnaireState = state.questionnaireUi[key] || {};
+                    clone.submitted = questionnaireStates[key] === 'submitted' || localQuestionnaireState.submitted === true;
+                    clone.skipped = questionnaireStates[key] === 'skipped' || localQuestionnaireState.skipped === true;
                     clone.isLatest = false;
                 }
                 if (clone.message_type === 'tool_call') {
                     clone.executed = !!completedToolCalls[String(clone.tool_call_id || clone.id || '')];
                     clone.rejected = !!(state.actionUi[toolActionKey(clone)] && state.actionUi[toolActionKey(clone)].rejected);
+                    clone.hiddenTool = isHiddenToolMessage(clone);
                     clone.isLatestAction = false;
                 }
                 return clone;
@@ -789,7 +893,7 @@
             }
 
             var pendingActions = prepared.filter(function (message) {
-                return message.message_type === 'tool_call' && !message.executed && !message.rejected;
+                return message.message_type === 'tool_call' && !message.executed && !message.rejected && !message.hiddenTool;
             });
             pendingActions.forEach(function (message) {
                 message.isLatestAction = false;
@@ -805,6 +909,9 @@
                     return false;
                 }
                 if (message.message_type === 'tool_result') {
+                    return false;
+                }
+                if (message.message_type === 'tool_call' && message.hiddenTool) {
                     return false;
                 }
                 return !(message.role === 'user' && message.message_type === 'message' && String(message.content || '').trim() === '');
@@ -889,6 +996,7 @@
                     }
                     open.addEventListener('click', function () {
                         state.conversationId = conversation.id;
+                        syncConversationIdToUrl(state.conversationId);
                         loadHistory();
                         loadContexts();
                         loadConversations();
@@ -927,6 +1035,7 @@
                             post(api('deleteConversation'), {conversation_id: conversation.id}).then(function () {
                                 if (Number(state.conversationId) === Number(conversation.id)) {
                                     state.conversationId = null;
+                                    syncConversationIdToUrl(null);
                                     renderMessages([]);
                                     contexts.replaceChildren();
                                 }
@@ -961,6 +1070,7 @@
             }).then(function (data) {
                 if (data.success && data.conversation) {
                     state.conversationId = data.conversation.id;
+                    syncConversationIdToUrl(state.conversationId);
                     return Promise.all([loadConversations(), loadHistory(), loadContexts()]);
                 }
                 return null;
@@ -1103,6 +1213,10 @@
             node.classList.toggle('is-collapsed');
             toggleButton.textContent = node.classList.contains('is-collapsed') ? 'AI' : 'x';
         });
+
+        if (state.conversationId) {
+            syncConversationIdToUrl(state.conversationId);
+        }
 
         Promise.resolve()
             .then(function () {

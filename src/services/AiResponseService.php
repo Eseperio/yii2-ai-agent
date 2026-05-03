@@ -109,7 +109,9 @@ class AiResponseService extends Component
             }
         }
 
-        $parts = array_values(array_filter(array_map('trim', $parts)));
+        $parts = array_values(array_filter(array_map(static function ($part): string {
+            return is_scalar($part) || $part instanceof \Stringable ? trim((string)$part) : '';
+        }, $parts)));
         return $parts ? implode("\n\n", $parts) : null;
     }
 
@@ -177,10 +179,14 @@ class AiResponseService extends Component
             } elseif (!is_null($content)) {
                 $content = (string)$content;
             }
-            $normalized[] = array_merge($item, [
-                'role' => isset($item['role']) ? (string)$item['role'] : 'user',
-                'content' => $content,
-            ]);
+            $normalizedItem = $item;
+            if (array_key_exists('content', $item)) {
+                $normalizedItem['content'] = $content;
+            }
+            if (!isset($item['type']) || array_key_exists('role', $item) || array_key_exists('content', $item)) {
+                $normalizedItem['role'] = isset($item['role']) ? (string)$item['role'] : 'user';
+            }
+            $normalized[] = $normalizedItem;
         }
         return $normalized;
     }

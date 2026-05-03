@@ -119,6 +119,7 @@ class ExecuteToolAction extends BaseChatAction
                     (int)($createdContext['sort_order'] ?? 0)
                 );
                 $createdContexts[] = $persistedContext->toArray();
+                $this->addContextPreviewMessage($conversationId, $persistedContext, $snapshot?->response_id);
             }
         }
         if ($manager) {
@@ -283,7 +284,12 @@ class ExecuteToolAction extends BaseChatAction
                 $parsed['id'] ?? null,
                 $nextToolCallId,
                 $name,
-                ['snapshot_id' => $snapshot?->id, 'tool_call' => $toolCall]
+                [
+                    'snapshot_id' => $snapshot?->id,
+                    'tool_call' => $toolCall,
+                    'tool_metadata' => $toolDefinition->metadata,
+                    'requires_approval' => $toolDefinition->requiresApproval,
+                ]
             );
             $pendingTools[] = [
                 'name' => $toolDefinition->name,
