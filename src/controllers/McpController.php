@@ -36,6 +36,12 @@ class McpController extends Controller
             throw new NotFoundHttpException();
         }
 
+        if (is_callable($this->module->mcpAvailabilityCallback)
+            && !call_user_func($this->module->mcpAvailabilityCallback, \Yii::$app->request, $this->module, $action)
+        ) {
+            throw new NotFoundHttpException();
+        }
+
         $this->applyCors();
 
         if (!$this->isOriginAllowed()) {

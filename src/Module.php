@@ -44,6 +44,7 @@ class Module extends BaseModule implements BootstrapInterface
     public array $mcpAllowedOrigins = [];
     public array $mcpScopes = [];
     public $mcpAccessTokenValidator = null;
+    public $mcpAvailabilityCallback = null;
     public $mcpUserResolver = null;
     public $mcpAuthorizationHandler = null;
     public $mcpTokenHandler = null;

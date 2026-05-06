@@ -205,6 +205,8 @@ Endpoints registrados cuando `mcpEnabled=true`:
 
 El endpoint MCP exige `Authorization: Bearer ...` salvo que desactives `mcpRequireAuth`. La libreria incluye validacion JWT HS256 para access tokens cortos con `iss`, `aud`, `exp`, `type=access` y `scope`. Si tu aplicacion ya tiene OAuth propio, configura `mcpAccessTokenValidator` y devuelve un `McpAuthContext` o un array con `scopes`, `user`, `subject`, `client_id` y `claims`.
 
+Si la disponibilidad depende del tenant, plan contratado u otro estado de la aplicacion, usa `mcpAvailabilityCallback`. Cuando devuelve `false`, los endpoints MCP responden como no encontrados.
+
 Las pantallas OAuth, consentimiento, client registration persistente y refresh-token rotation son responsabilidad de la aplicacion porque dependen del login, permisos y tablas reales. La libreria expone los endpoints y metadata, y permite conectar esos flujos con `mcpAuthorizationHandler`, `mcpTokenHandler` y `mcpRegistrationHandler`.
 
 Para publicar una tool en MCP debe marcarse explicitamente:
