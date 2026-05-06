@@ -4,9 +4,39 @@ namespace eseperio\aiagent\controllers;
 
 use yii\web\NotFoundHttpException;
 use yii\web\Controller;
+use yii\filters\VerbFilter;
 
 class ChatController extends Controller
 {
+    public function behaviors(): array
+    {
+        return [
+            'verbs' => [
+                'class' => VerbFilter::class,
+                'actions' => [
+                    'index' => ['GET'],
+                    'get-history' => ['GET'],
+                    'conversations' => ['GET'],
+                    'list-conversations' => ['GET'],
+                    'list-contexts' => ['GET'],
+                    'create-conversation' => ['POST'],
+                    'new-conversation' => ['POST'],
+                    'continue-conversation' => ['POST'],
+                    'set-conversation-context' => ['POST'],
+                    'add-context' => ['POST'],
+                    'remove-context' => ['POST'],
+                    'render-contexts' => ['GET', 'POST'],
+                    'send-message' => ['POST'],
+                    'execute-action' => ['POST'],
+                    'execute-tool' => ['POST'],
+                    'rename-conversation' => ['POST'],
+                    'archive-conversation' => ['POST'],
+                    'delete-conversation' => ['POST'],
+                ],
+            ],
+        ];
+    }
+
     public function beforeAction($action)
     {
         $module = $this->module;

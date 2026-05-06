@@ -81,10 +81,45 @@ class m260430_000001_create_ai_agent_tables extends Migration
         $this->createIndex('idx-ai_agent_tool_snapshot-tool_name', '{{%ai_agent_tool_snapshot}}', 'tool_name');
         $this->createIndex('idx-ai_agent_tool_snapshot-provider_id', '{{%ai_agent_tool_snapshot}}', 'provider_id');
         $this->addForeignKey('fk-ai_agent_tool_snapshot-conversation', '{{%ai_agent_tool_snapshot}}', 'conversation_id', '{{%ai_agent_conversation}}', 'id', 'CASCADE', 'CASCADE');
+
+        $this->createTable('{{%ai_agent_execution}}', [
+            'id' => $this->primaryKey(),
+            'conversation_id' => $this->integer()->null(),
+            'snapshot_id' => $this->integer()->null(),
+            'response_id' => $this->string(255)->null(),
+            'tool_call_id' => $this->string(255)->null(),
+            'tool_name' => $this->string(128)->notNull(),
+            'actor_id' => $this->string(64)->null(),
+            'status' => $this->string(30)->notNull()->defaultValue('running'),
+            'effect' => $this->string(30)->notNull()->defaultValue('write'),
+            'risk_level' => $this->string(30)->notNull()->defaultValue('medium'),
+            'resource_type' => $this->string(128)->null(),
+            'resource_id' => $this->string(128)->null(),
+            'idempotency_key' => $this->string(128)->null(),
+            'expected_version' => $this->string(64)->null(),
+            'observed_version' => $this->string(64)->null(),
+            'arguments_json' => $this->text()->null(),
+            'result_json' => $this->text()->null(),
+            'error_json' => $this->text()->null(),
+            'started_at' => $this->integer()->null(),
+            'finished_at' => $this->integer()->null(),
+            'created_at' => $this->integer()->notNull(),
+            'updated_at' => $this->integer()->notNull(),
+        ]);
+        $this->createIndex('idx-ai_agent_execution-conversation_id', '{{%ai_agent_execution}}', 'conversation_id');
+        $this->createIndex('idx-ai_agent_execution-snapshot_id', '{{%ai_agent_execution}}', 'snapshot_id');
+        $this->createIndex('idx-ai_agent_execution-tool_name', '{{%ai_agent_execution}}', 'tool_name');
+        $this->createIndex('idx-ai_agent_execution-status', '{{%ai_agent_execution}}', 'status');
+        $this->createIndex('idx-ai_agent_execution-idempotency_key', '{{%ai_agent_execution}}', 'idempotency_key');
+        $this->addForeignKey('fk-ai_agent_execution-conversation', '{{%ai_agent_execution}}', 'conversation_id', '{{%ai_agent_conversation}}', 'id', 'SET NULL', 'CASCADE');
+        $this->addForeignKey('fk-ai_agent_execution-snapshot', '{{%ai_agent_execution}}', 'snapshot_id', '{{%ai_agent_tool_snapshot}}', 'id', 'SET NULL', 'CASCADE');
     }
 
     public function safeDown(): void
     {
+        $this->dropForeignKey('fk-ai_agent_execution-snapshot', '{{%ai_agent_execution}}');
+        $this->dropForeignKey('fk-ai_agent_execution-conversation', '{{%ai_agent_execution}}');
+        $this->dropTable('{{%ai_agent_execution}}');
         $this->dropForeignKey('fk-ai_agent_tool_snapshot-conversation', '{{%ai_agent_tool_snapshot}}');
         $this->dropForeignKey('fk-ai_agent_message-conversation', '{{%ai_agent_message}}');
         $this->dropForeignKey('fk-ai_agent_context-conversation', '{{%ai_agent_context}}');

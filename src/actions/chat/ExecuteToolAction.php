@@ -97,6 +97,36 @@ class ExecuteToolAction extends BaseChatAction
             metadata: []
         );
 
+        $policy = $this->module()?->getToolPolicy()->decide($definition, $context, $arguments);
+        if ($policy && !$policy->allowed) {
+            $result = new ToolResult(false, null, $policy->reason ?? 'Tool execution denied by policy', [], [], 'Tool execution denied by policy');
+            $manager = $this->module()?->getConversationManager();
+            $manager?->addMessage(
+                $conversationId,
+                'tool',
+                'tool_result',
+                $result->message ?? $result->error ?? 'Tool execution denied by policy',
+                $snapshot?->response_id,
+                $toolCallId !== '' ? $toolCallId : null,
+                $definition->name,
+                ['success' => false, 'error' => $result->error, 'data' => null]
+            );
+
+            return $this->json([
+                'success' => false,
+                'conversation_id' => $conversationId,
+                'tool_name' => $definition->name,
+                'error' => $result->error,
+                'message' => $result->message,
+                'policy' => [
+                    'effect' => $policy->effect,
+                    'risk_level' => $policy->riskLevel,
+                    'reason' => $policy->reason,
+                ],
+                'messages' => $manager?->getMessagesForDisplay($conversationId) ?? [],
+            ], 403);
+        }
+
         $result = $this->executeHandler($definition, $context, $arguments);
         $manager = $this->module()?->getConversationManager();
         $contextManager = $this->module()?->getContextManager();
@@ -273,6 +303,21 @@ class ExecuteToolAction extends BaseChatAction
             if ($nextToolCallId === '') {
                 $nextToolCallId = (string)($snapshot?->id ?? '');
             }
+            $policy = $this->module()?->getToolPolicy()->decide(
+                $toolDefinition,
+                new ToolExecutionContext(
+                    conversation: $conversation,
+                    message: null,
+                    toolCallId: $nextToolCallId,
+                    responseId: $parsed['id'] ?? null,
+                    contexts: $contexts,
+                    user: $this->user(),
+                    request: $request,
+                    toolSnapshot: $snapshot?->toArray() ?? [],
+                    metadata: ['auto_policy_check' => true]
+                ),
+                is_array($toolCall['arguments'] ?? null) ? $toolCall['arguments'] : []
+            );
             $manager?->addMessage(
                 $conversationId,
                 'assistant',
@@ -288,14 +333,21 @@ class ExecuteToolAction extends BaseChatAction
                     'snapshot_id' => $snapshot?->id,
                     'tool_call' => $toolCall,
                     'tool_metadata' => $toolDefinition->metadata,
-                    'requires_approval' => $toolDefinition->requiresApproval,
+                    'requires_approval' => $policy?->requiresApproval ?? $toolDefinition->requiresApproval,
+                    'policy' => [
+                        'allowed' => $policy?->allowed ?? true,
+                        'effect' => $policy?->effect ?? null,
+                        'risk_level' => $policy?->riskLevel ?? null,
+                        'reason' => $policy?->reason ?? null,
+                    ],
                 ]
             );
             $pendingTools[] = [
                 'name' => $toolDefinition->name,
                 'tool_call_id' => $nextToolCallId,
-                'requires_approval' => $toolDefinition->requiresApproval,
+                'requires_approval' => $policy?->requiresApproval ?? $toolDefinition->requiresApproval,
                 'snapshot_id' => $snapshot?->id,
+                'reason' => $policy?->allowed === false ? $policy->reason : null,
             ];
         }
 
@@ -455,23 +507,36 @@ class ExecuteToolAction extends BaseChatAction
 
     private function executeHandler(ToolDefinition $definition, ToolExecutionContext $context, array $arguments): ToolResult
     {
+        $policy = $this->module()?->getToolPolicy()->decide($definition, $context, $arguments);
+        $execution = $this->module()?->getExecutionJournal()->start($definition, $context, $arguments, [
+            'effect' => $policy?->effect,
+            'riskLevel' => $policy?->riskLevel,
+        ]);
         $handler = $definition->handler;
         if (is_callable($handler)) {
             $result = call_user_func($handler, $context, $arguments);
-            return $result instanceof ToolResult ? $result : new ToolResult(true, $result);
+            $result = $result instanceof ToolResult ? $result : new ToolResult(true, $result);
+            $this->module()?->getExecutionJournal()->finish($execution, $result);
+            return $result;
         }
 
         if (is_object($handler) && $handler instanceof ToolHandlerInterface) {
-            return $handler->execute($context, $arguments);
+            $result = $handler->execute($context, $arguments);
+            $this->module()?->getExecutionJournal()->finish($execution, $result);
+            return $result;
         }
 
         if (is_string($handler) && class_exists($handler)) {
             $handler = \Yii::createObject($handler);
             if ($handler instanceof ToolHandlerInterface) {
-                return $handler->execute($context, $arguments);
+                $result = $handler->execute($context, $arguments);
+                $this->module()?->getExecutionJournal()->finish($execution, $result);
+                return $result;
             }
         }
 
-        return new ToolResult(false, null, 'Tool handler not configured', [], [], 'Tool handler not configured');
+        $result = new ToolResult(false, null, 'Tool handler not configured', [], [], 'Tool handler not configured');
+        $this->module()?->getExecutionJournal()->finish($execution, $result);
+        return $result;
     }
 }

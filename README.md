@@ -172,6 +172,65 @@ Cuando la IA devuelve una `tool_call`, la libreria primero resuelve por snapshot
 
 La libreria guarda snapshots de tools antes de llamar a OpenAI y los asocia despues al `response_id` real para poder ejecutar la tool correcta aunque el nombre cambie en registros futuros.
 
+## MCP remoto
+
+La libreria tambien puede exponer un conector MCP HTTP que reutiliza el mismo catalogo de `ToolDefinition`, pero esta apagado por defecto y ninguna tool se publica automaticamente.
+
+Configuracion minima:
+
+```php
+'bootstrap' => ['aiAgent'],
+'modules' => [
+    'aiAgent' => [
+        'class' => \eseperio\aiagent\Module::class,
+        'mcpEnabled' => (bool)getenv('MCP_ENABLED'),
+        'mcpRoute' => getenv('MCP_ROUTE') ?: 'mcp',
+        'mcpIssuer' => getenv('MCP_ISSUER') ?: null,
+        'mcpAudience' => getenv('MCP_AUDIENCE') ?: 'yii2-ai-agent-mcp',
+        'mcpJwtSecret' => getenv('MCP_JWT_SECRET'),
+        'mcpAllowedOrigins' => array_filter(explode(',', getenv('MCP_ALLOWED_ORIGINS') ?: '')),
+        'mcpScopes' => ['products.read', 'products.write'],
+    ],
+],
+```
+
+`mcpRoute` registra una URL amigable. Por defecto es `/mcp`, pero puedes cambiarla a rutas como `/ia/mcp`. Para que el modulo pueda registrar las reglas de URL durante el arranque de Yii, incluyelo en `bootstrap` o define reglas equivalentes manualmente en tu aplicacion.
+
+Endpoints registrados cuando `mcpEnabled=true`:
+
+- `POST /mcp`: endpoint MCP JSON-RPC con `initialize`, `notifications/initialized`, `ping`, `tools/list` y `tools/call`.
+- `GET /mcp/.well-known/oauth-protected-resource`: metadata de resource server.
+- `GET /mcp/.well-known/oauth-authorization-server`: metadata OAuth.
+- `GET /mcp/oauth/authorize`, `POST /mcp/oauth/token`, `POST /mcp/oauth/register`: delegan en handlers configurables de la aplicacion.
+
+El endpoint MCP exige `Authorization: Bearer ...` salvo que desactives `mcpRequireAuth`. La libreria incluye validacion JWT HS256 para access tokens cortos con `iss`, `aud`, `exp`, `type=access` y `scope`. Si tu aplicacion ya tiene OAuth propio, configura `mcpAccessTokenValidator` y devuelve un `McpAuthContext` o un array con `scopes`, `user`, `subject`, `client_id` y `claims`.
+
+Las pantallas OAuth, consentimiento, client registration persistente y refresh-token rotation son responsabilidad de la aplicacion porque dependen del login, permisos y tablas reales. La libreria expone los endpoints y metadata, y permite conectar esos flujos con `mcpAuthorizationHandler`, `mcpTokenHandler` y `mcpRegistrationHandler`.
+
+Para publicar una tool en MCP debe marcarse explicitamente:
+
+```php
+new \eseperio\aiagent\dto\ToolDefinition(
+    'search_products',
+    'Search products visible to the current user',
+    ['type' => 'object', 'properties' => ['query' => ['type' => 'string']]],
+    SearchProductsTool::class,
+    false,
+    'products',
+    [],
+    null,
+    [
+        'mcp' => true,
+        'mcpScopes' => ['products.read'],
+        'effect' => 'read',
+        'riskLevel' => 'low',
+        'allowAutonomous' => true,
+    ]
+);
+```
+
+`*.write` y `*.manage` implican `*.read` de la misma area. El filtrado MCP no sustituye el RBAC interno: cada handler debe volver a validar permisos reales del usuario, limites, paginacion y saneado de datos antes de devolver resultados.
+
 ## Endpoint falso para tests
 
 La extension incluye un controlador fake para emular `POST /responses` de OpenAI en tests funcionales REST. El objetivo es probar el contrato JSON y el flujo de herramientas sin consumir API reales.

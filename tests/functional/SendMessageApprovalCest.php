@@ -352,6 +352,25 @@ class SendMessageApprovalCest
         $I->assertSame('7', $response['data']['handled'] ?? null);
     }
 
+    public function testExecuteToolDeniedWhenPolicyBlocksEffect(\FunctionalTester $I): void
+    {
+        $I->sendPost('/ai-agent/chat/create-conversation', []);
+        $conversation = json_decode($I->grabResponse(), true)['conversation'] ?? null;
+        $I->assertIsArray($conversation);
+
+        $I->sendPost('/ai-agent/chat/execute-tool', [
+            'conversation_id' => $conversation['id'],
+            'tool_name' => 'blocked_delete_tool',
+            'arguments' => ['value' => 1],
+        ]);
+
+        $I->seeResponseCodeIs(403);
+        $response = json_decode($I->grabResponse(), true);
+        $I->assertFalse($response['success'] ?? true);
+        $I->assertSame('tool_effect_blocked', $response['policy']['reason'] ?? null);
+        $I->assertSame('delete', $response['policy']['effect'] ?? null);
+    }
+
     public function testInlineToolCallDoesNotDuplicateRows(\FunctionalTester $I): void
     {
         $I->sendPost('/ai-agent/chat/create-conversation', []);

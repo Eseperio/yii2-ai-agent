@@ -159,6 +159,19 @@ class SendMessageAction extends BaseChatAction
                     if ($toolCallId === '') {
                         $toolCallId = (string)$snapshot->id;
                     }
+                    $arguments = is_array($toolCall['arguments'] ?? null) ? $toolCall['arguments'] : [];
+                    $executionContext = new \eseperio\aiagent\dto\ToolExecutionContext(
+                        conversation: $conversation,
+                        message: null,
+                        toolCallId: $toolCallId,
+                        responseId: $parsed['id'] ?? null,
+                        contexts: $toolContext->contexts,
+                        user: $this->user(),
+                        request: $request,
+                        toolSnapshot: $snapshot->toArray(),
+                        metadata: ['auto_policy_check' => true]
+                    );
+                    $policy = $this->module()?->getToolPolicy()->decide($definition, $executionContext, $arguments);
                     $manager->addMessage(
                         $conversationId,
                         'assistant',
@@ -174,10 +187,24 @@ class SendMessageAction extends BaseChatAction
                             'snapshot_id' => $snapshot->id,
                             'tool_call' => $toolCall,
                             'tool_metadata' => $definition->metadata,
-                            'requires_approval' => $definition->requiresApproval,
+                            'requires_approval' => $policy?->requiresApproval ?? $definition->requiresApproval,
+                            'policy' => [
+                                'allowed' => $policy?->allowed ?? true,
+                                'effect' => $policy?->effect ?? null,
+                                'risk_level' => $policy?->riskLevel ?? null,
+                                'reason' => $policy?->reason ?? null,
+                            ],
                         ]
                     );
-                    if ($definition->requiresApproval) {
+                    if ($policy && !$policy->allowed) {
+                        $pendingTools[] = [
+                            'name' => $definition->name,
+                            'tool_call_id' => $toolCallId,
+                            'requires_approval' => true,
+                            'snapshot_id' => $snapshot->id,
+                            'reason' => $policy->reason,
+                        ];
+                    } elseif ($policy?->requiresApproval) {
                         $pendingTools[] = [
                             'name' => $definition->name,
                             'tool_call_id' => $toolCallId,
@@ -185,6 +212,16 @@ class SendMessageAction extends BaseChatAction
                             'snapshot_id' => $snapshot->id,
                         ];
                     } else {
+                        if ($policy && !$policy->allowAutonomous) {
+                            $pendingTools[] = [
+                                'name' => $definition->name,
+                                'tool_call_id' => $toolCallId,
+                                'requires_approval' => true,
+                                'snapshot_id' => $snapshot->id,
+                                'reason' => 'autonomous_execution_not_allowed',
+                            ];
+                            continue;
+                        }
                         if ($autoExecutionCount >= $autoExecutionLimit) {
                             $pendingTools[] = [
                                 'name' => $definition->name,
@@ -200,7 +237,7 @@ class SendMessageAction extends BaseChatAction
                             $snapshot,
                             $conversationId,
                             $toolCallId,
-                            is_array($toolCall['arguments'] ?? null) ? $toolCall['arguments'] : [],
+                            $arguments,
                             $request
                         ) : null;
                         $autoExecutionCount++;
@@ -509,6 +546,21 @@ class SendMessageAction extends BaseChatAction
             if ($toolCallId === '') {
                 $toolCallId = (string)($snapshot?->id ?? '');
             }
+            $policy = $this->module()?->getToolPolicy()->decide(
+                $toolDefinition,
+                new \eseperio\aiagent\dto\ToolExecutionContext(
+                    conversation: $conversation,
+                    message: null,
+                    toolCallId: $toolCallId,
+                    responseId: $parsed['id'] ?? null,
+                    contexts: $contexts,
+                    user: $this->user(),
+                    request: $request,
+                    toolSnapshot: $snapshot?->toArray() ?? [],
+                    metadata: ['auto_policy_check' => true]
+                ),
+                is_array($toolCall['arguments'] ?? null) ? $toolCall['arguments'] : []
+            );
             $manager?->addMessage(
                 $conversationId,
                 'assistant',
@@ -524,14 +576,21 @@ class SendMessageAction extends BaseChatAction
                     'snapshot_id' => $snapshot?->id,
                     'tool_call' => $toolCall,
                     'tool_metadata' => $toolDefinition->metadata,
-                    'requires_approval' => $toolDefinition->requiresApproval,
+                    'requires_approval' => $policy?->requiresApproval ?? $toolDefinition->requiresApproval,
+                    'policy' => [
+                        'allowed' => $policy?->allowed ?? true,
+                        'effect' => $policy?->effect ?? null,
+                        'risk_level' => $policy?->riskLevel ?? null,
+                        'reason' => $policy?->reason ?? null,
+                    ],
                 ]
             );
             $pendingTools[] = [
                 'name' => $toolDefinition->name,
                 'tool_call_id' => $toolCallId,
-                'requires_approval' => $toolDefinition->requiresApproval,
+                'requires_approval' => $policy?->requiresApproval ?? $toolDefinition->requiresApproval,
                 'snapshot_id' => $snapshot?->id,
+                'reason' => $policy?->allowed === false ? $policy->reason : null,
             ];
         }
 
@@ -545,23 +604,40 @@ class SendMessageAction extends BaseChatAction
 
     protected function executeHandler(\eseperio\aiagent\dto\ToolDefinition $definition, \eseperio\aiagent\dto\ToolExecutionContext $context, array $arguments): \eseperio\aiagent\dto\ToolResult
     {
+        $policy = $this->module()?->getToolPolicy()->decide($definition, $context, $arguments);
+        if ($policy && !$policy->allowed) {
+            return new \eseperio\aiagent\dto\ToolResult(false, null, $policy->reason ?? 'Tool execution denied by policy', [], [], 'Tool execution denied by policy');
+        }
+
+        $execution = $this->module()?->getExecutionJournal()->start($definition, $context, $arguments, [
+            'effect' => $policy?->effect,
+            'riskLevel' => $policy?->riskLevel,
+        ]);
         $handler = $definition->handler;
         if (is_callable($handler)) {
             $result = call_user_func($handler, $context, $arguments);
-            return $result instanceof \eseperio\aiagent\dto\ToolResult ? $result : new \eseperio\aiagent\dto\ToolResult(true, $result);
+            $result = $result instanceof \eseperio\aiagent\dto\ToolResult ? $result : new \eseperio\aiagent\dto\ToolResult(true, $result);
+            $this->module()?->getExecutionJournal()->finish($execution, $result);
+            return $result;
         }
 
         if (is_object($handler) && $handler instanceof \eseperio\aiagent\contracts\ToolHandlerInterface) {
-            return $handler->execute($context, $arguments);
+            $result = $handler->execute($context, $arguments);
+            $this->module()?->getExecutionJournal()->finish($execution, $result);
+            return $result;
         }
 
         if (is_string($handler) && class_exists($handler)) {
             $handler = \Yii::createObject($handler);
             if ($handler instanceof \eseperio\aiagent\contracts\ToolHandlerInterface) {
-                return $handler->execute($context, $arguments);
+                $result = $handler->execute($context, $arguments);
+                $this->module()?->getExecutionJournal()->finish($execution, $result);
+                return $result;
             }
         }
 
-        return new \eseperio\aiagent\dto\ToolResult(false, null, 'Tool handler not configured', [], [], 'Tool handler not configured');
+        $result = new \eseperio\aiagent\dto\ToolResult(false, null, 'Tool handler not configured', [], [], 'Tool handler not configured');
+        $this->module()?->getExecutionJournal()->finish($execution, $result);
+        return $result;
     }
 }

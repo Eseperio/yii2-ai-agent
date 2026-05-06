@@ -223,9 +223,34 @@ class AiResponseServiceTest extends TestCase
         $this->assertSame('captured_resp', $response['id'] ?? null);
         $this->assertCount(2, CapturingAiClient::$payloads);
         $this->assertArrayNotHasKey('previous_response_id', CapturingAiClient::$payloads[1]);
-        $this->assertArrayNotHasKey('instructions', CapturingAiClient::$payloads[0]);
+        $this->assertStringContainsString('Hard invariants for this turn', CapturingAiClient::$payloads[0]['instructions'] ?? '');
+        $this->assertStringNotContainsString('fallback app context', CapturingAiClient::$payloads[0]['instructions'] ?? '');
         $this->assertStringContainsString('base fallback', CapturingAiClient::$payloads[1]['instructions'] ?? '');
         $this->assertStringContainsString('fallback app context', CapturingAiClient::$payloads[1]['instructions'] ?? '');
+    }
+
+    public function testSendCanUseFullInstructionsOnContinuationWhenConfigured(): void
+    {
+        CapturingAiClient::$payloads = [];
+        $module = \Yii::$app->getModule('aiAgent');
+        $module->baseInstructions = 'base full continuation';
+        $module->applicationContext = 'full app context';
+        $module->useCompactContinuationInstructions = false;
+        $module->set('clientFactory', [
+            'class' => CapturingAiClientFactory::class,
+        ]);
+
+        $service = new AiResponseService();
+        $service->send([
+            'model' => 'gpt-test',
+            'previous_response_id' => 'prev_123',
+            'input' => [
+                ['role' => 'user', 'content' => 'retry-previous-response-id'],
+            ],
+        ]);
+
+        $this->assertStringContainsString('base full continuation', CapturingAiClient::$payloads[0]['instructions'] ?? '');
+        $this->assertStringContainsString('full app context', CapturingAiClient::$payloads[0]['instructions'] ?? '');
     }
 
     public function testSendAddsServiceTierAndDoesNotForwardInternalContexts(): void

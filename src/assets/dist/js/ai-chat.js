@@ -576,8 +576,9 @@
 
     function renderContextPreview(message) {
         var payload = parseMessageJson(message.content);
-        var wrapper = el('article', 'ai-agent-context ai-agent-context-inline');
-        if (payload.image_url) {
+        var hasImage = !!payload.image_url;
+        var wrapper = el('article', 'ai-agent-context ai-agent-context-inline' + (hasImage ? '' : ' ai-agent-context-no-image'));
+        if (hasImage) {
             var image = document.createElement('img');
             image.className = 'ai-agent-context-image';
             image.src = payload.image_url;
@@ -788,6 +789,8 @@
                 });
             }
             window.setTimeout(scroll, 80);
+            window.setTimeout(scroll, 250);
+            window.setTimeout(scroll, 600);
         }
 
         function setBusy(value) {
@@ -1019,9 +1022,7 @@
                     open.addEventListener('click', function () {
                         state.conversationId = conversation.id;
                         syncConversationIdToUrl(state.conversationId);
-                        loadHistory();
-                        loadContexts();
-                        loadConversations();
+                        Promise.all([loadHistory(), loadContexts(), loadConversations()]).then(scrollMessagesToBottom);
                     });
                     row.appendChild(open);
                     if (permissions.canRenameChat !== false && api('renameConversation')) {
@@ -1081,11 +1082,13 @@
             });
         }
 
-        function createConversation() {
+        function createConversation(keepBusy) {
             if (!api('createConversation') || permissions.canCreateChat === false) {
                 return Promise.resolve();
             }
-            setBusy(true);
+            if (!keepBusy) {
+                setBusy(true);
+            }
             return post(api('createConversation'), {
                 model: props.model || null,
                 contexts: props.contexts || []
@@ -1097,7 +1100,9 @@
                 }
                 return null;
             }).finally(function () {
-                setBusy(false);
+                if (!keepBusy) {
+                    setBusy(false);
+                }
             });
         }
 
@@ -1194,20 +1199,20 @@
                 payloadValue = state.pendingRejectionNote + '\n\nMensaje del usuario: ' + value;
                 state.pendingRejectionNote = '';
             }
-            var ensureConversation = state.conversationId ? Promise.resolve() : createConversation();
+            if (input.value.trim() === value) {
+                input.value = '';
+            }
+            setBusy(true);
+            startProcessingIndicator();
+            var ensureConversation = state.conversationId ? Promise.resolve() : createConversation(true);
             return ensureConversation.then(function () {
                 if (!state.conversationId || !api('sendMessage')) {
                     return;
                 }
-                setBusy(true);
-                startProcessingIndicator();
                 return post(api('sendMessage'), {
                     conversation_id: state.conversationId,
                     message: payloadValue
                 }).then(function (data) {
-                    if (input.value.trim() === value) {
-                        input.value = '';
-                    }
                     renderMessages(data.messages || []);
                     renderPendingTools(data.pending_tools || []);
                     return Promise.all([loadConversations(), loadContexts()]);
@@ -1246,7 +1251,8 @@
             })
             .then(function () {
                 return Promise.all([loadConversations(), loadHistory(), loadContexts()]);
-            });
+            })
+            .then(scrollMessagesToBottom);
     }
 
     document.addEventListener('DOMContentLoaded', function () {

@@ -142,6 +142,10 @@
     padding: 8px;
 }
 
+.ai-agent-context-no-image {
+    grid-template-columns: minmax(0, 1fr);
+}
+
 .ai-agent-context-image {
     width: 42px;
     height: 42px;
@@ -198,7 +202,7 @@
 
 .ai-agent-context-inline {
     margin: 0;
-    min-width: min(320px, 100%);
+    width: 100%;
 }
 
 .ai-agent-main {
@@ -231,6 +235,13 @@
     border-radius: 8px;
     padding: 9px 11px;
     background: #eef2f7;
+}
+
+.ai-agent-message-context .ai-agent-message-body {
+    width: min(100%, 520px);
+    max-width: min(100%, 520px);
+    padding: 0;
+    background: transparent;
 }
 
 .ai-agent-message-user .ai-agent-message-body {

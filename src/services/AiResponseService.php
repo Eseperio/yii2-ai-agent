@@ -49,8 +49,10 @@ class AiResponseService extends Component
             $payload['tools'] = $module->getToolRegistry()->normalize($tools);
         }
 
-        if (!isset($payload['instructions']) && !isset($payload['previous_response_id'])) {
-            $payload['instructions'] = $this->buildInstructions($module, $payload);
+        $instructionsWereAutoAdded = false;
+        if (!isset($payload['instructions'])) {
+            $payload['instructions'] = $this->buildInstructionsForPayload($module, $payload);
+            $instructionsWereAutoAdded = true;
         }
 
         unset($payload['contexts']);
@@ -65,7 +67,11 @@ class AiResponseService extends Component
 
             $fallbackPayload = $payload;
             unset($fallbackPayload['previous_response_id']);
-            if (!isset($fallbackPayload['instructions'])) {
+            if ($instructionsWereAutoAdded) {
+                $instructionPayload = $fallbackPayload;
+                $instructionPayload['contexts'] = $internalContexts;
+                $fallbackPayload['instructions'] = $this->buildInstructions($module, $instructionPayload);
+            } elseif (!isset($fallbackPayload['instructions'])) {
                 $instructionPayload = $fallbackPayload;
                 $instructionPayload['contexts'] = $internalContexts;
                 $fallbackPayload['instructions'] = $this->buildInstructions($module, $instructionPayload);
@@ -113,6 +119,19 @@ class AiResponseService extends Component
             return is_scalar($part) || $part instanceof \Stringable ? trim((string)$part) : '';
         }, $parts)));
         return $parts ? implode("\n\n", $parts) : null;
+    }
+
+    private function buildInstructionsForPayload(\eseperio\aiagent\Module $module, array $payload): ?string
+    {
+        if (
+            !empty($payload['previous_response_id'])
+            && $module->useCompactContinuationInstructions
+            && trim($module->continuationInstructions) !== ''
+        ) {
+            return trim($module->continuationInstructions);
+        }
+
+        return $this->buildInstructions($module, $payload);
     }
 
     private function isInstructionProviderAvailable(mixed $provider, \eseperio\aiagent\dto\InstructionContext $context): bool

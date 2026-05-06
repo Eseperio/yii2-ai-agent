@@ -13,27 +13,36 @@ class ContextRenderer extends Component
         $module = $this->getModule();
         $renderer = $module?->contextRenderers[$context->type] ?? null;
 
-        if (is_callable($renderer)) {
-            $data = call_user_func($renderer, $context, $renderContext);
-            if (is_array($data)) {
-                return $this->normalize($context, $data);
-            }
-        } elseif (is_string($renderer) && class_exists($renderer)) {
-            $instance = \Yii::createObject($renderer);
-            if (method_exists($instance, 'render')) {
-                $data = $instance->render($context, $renderContext);
+        try {
+            if (is_callable($renderer)) {
+                $data = call_user_func($renderer, $context, $renderContext);
                 if (is_array($data)) {
                     return $this->normalize($context, $data);
                 }
-            }
-        } elseif (is_array($renderer) && isset($renderer['class'])) {
-            $instance = \Yii::createObject($renderer);
-            if (method_exists($instance, 'render')) {
-                $data = $instance->render($context, $renderContext);
-                if (is_array($data)) {
-                    return $this->normalize($context, $data);
+            } elseif (is_string($renderer) && class_exists($renderer)) {
+                $instance = \Yii::createObject($renderer);
+                if (method_exists($instance, 'render')) {
+                    $data = $instance->render($context, $renderContext);
+                    if (is_array($data)) {
+                        return $this->normalize($context, $data);
+                    }
+                }
+            } elseif (is_array($renderer) && isset($renderer['class'])) {
+                $instance = \Yii::createObject($renderer);
+                if (method_exists($instance, 'render')) {
+                    $data = $instance->render($context, $renderContext);
+                    if (is_array($data)) {
+                        return $this->normalize($context, $data);
+                    }
                 }
             }
+        } catch (\Throwable $e) {
+            \Yii::warning([
+                'message' => 'AI context renderer failed; falling back to default preview.',
+                'context_id' => $context->id,
+                'context_type' => $context->type,
+                'exception' => $e->getMessage(),
+            ], __METHOD__);
         }
 
         $title = $context->label ?: 'Context #' . $context->id;

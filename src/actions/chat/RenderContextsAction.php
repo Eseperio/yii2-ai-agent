@@ -43,8 +43,9 @@ class RenderContextsAction extends BaseChatAction
             $secondaryUrl = htmlspecialchars((string)($context['secondary_url'] ?? ''), ENT_QUOTES, 'UTF-8');
             $secondaryLabel = htmlspecialchars((string)($context['secondary_label'] ?? 'View'), ENT_QUOTES, 'UTF-8');
             $badges = array_map(static fn($badge): string => htmlspecialchars((string)$badge, ENT_QUOTES, 'UTF-8'), (array)($context['badges'] ?? []));
+            $contextClass = 'ai-agent-context' . ($imageUrl === '' ? ' ai-agent-context-no-image' : '');
 
-            return '<article class="ai-agent-context" data-context-id="' . (int)($context['id'] ?? 0) . '">'
+            return '<article class="' . $contextClass . '" data-context-id="' . (int)($context['id'] ?? 0) . '">'
                 . ($imageUrl !== '' ? '<img class="ai-agent-context-image" src="' . $imageUrl . '" alt="">' : '')
                 . '<div class="ai-agent-context-content">'
                 . '<div class="ai-agent-context-kicker">' . $typeLabel . '</div>'

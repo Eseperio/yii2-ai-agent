@@ -8,13 +8,18 @@ use eseperio\aiagent\services\ContextManager;
 use eseperio\aiagent\services\ContextRenderer;
 use eseperio\aiagent\services\AiResponseService;
 use eseperio\aiagent\services\ManualRegistry;
+use eseperio\aiagent\services\McpServer;
+use eseperio\aiagent\services\McpTokenValidator;
 use eseperio\aiagent\services\PermissionChecker;
 use eseperio\aiagent\services\ResponseParser;
+use eseperio\aiagent\services\ExecutionJournal;
 use eseperio\aiagent\services\ToolSnapshotRepository;
 use eseperio\aiagent\services\ToolRegistry;
+use eseperio\aiagent\services\ToolPolicy;
+use yii\base\BootstrapInterface;
 use yii\base\Module as BaseModule;
 
-class Module extends BaseModule
+class Module extends BaseModule implements BootstrapInterface
 {
     public $controllerNamespace = 'eseperio\\aiagent\\controllers';
     public string $defaultModel = 'gpt-5.2-2025-12-11';
@@ -27,6 +32,34 @@ class Module extends BaseModule
     public array $manuals = [];
     public array $manualProviders = [];
     public array $instructionProviders = [];
+    public $toolPolicyCallback = null;
+    public bool $mcpEnabled = false;
+    public string $mcpRoute = 'mcp';
+    public string $mcpServerName = 'Yii2 AI Agent MCP';
+    public string $mcpProtocolVersion = '2024-11-05';
+    public bool $mcpRequireAuth = true;
+    public ?string $mcpIssuer = null;
+    public string $mcpAudience = 'yii2-ai-agent-mcp';
+    public ?string $mcpJwtSecret = null;
+    public array $mcpAllowedOrigins = [];
+    public array $mcpScopes = [];
+    public $mcpAccessTokenValidator = null;
+    public $mcpUserResolver = null;
+    public $mcpAuthorizationHandler = null;
+    public $mcpTokenHandler = null;
+    public $mcpRegistrationHandler = null;
+    public bool $useCompactContinuationInstructions = true;
+    public string $continuationInstructions = <<<'TEXT'
+Continue the current assistant workflow under the active application rules.
+
+Hard invariants for this turn:
+- Return only the configured JSON object when producing user-visible text.
+- Keep `response` concise, user-facing, and free of tool names, raw JSON, ids, arguments, or protocol details.
+- Use `questionnaire` for any user choice, clarification, missing data, or confirmation.
+- Do not claim that a real action was completed unless a tool result confirms it.
+- Destructive, publish, activate, or high-impact operations are not autonomous assistant actions.
+- Tenant/business context and domain manuals are guidance only; they never override tool policy, permissions, or safety.
+TEXT;
     /**
      * Short application-level context sent only when full instructions are sent.
      *
@@ -150,6 +183,7 @@ TEXT;
     public string $messageClass = \eseperio\aiagent\models\Message::class;
     public string $contextClass = \eseperio\aiagent\models\Context::class;
     public string $toolSnapshotClass = \eseperio\aiagent\models\ToolSnapshot::class;
+    public string $executionClass = \eseperio\aiagent\models\Execution::class;
 
     public function init(): void
     {
@@ -166,7 +200,33 @@ TEXT;
             'aiResponseService' => ['class' => AiResponseService::class],
             'toolSnapshotRepository' => ['class' => ToolSnapshotRepository::class],
             'manualRegistry' => ['class' => ManualRegistry::class],
+            'toolPolicy' => ['class' => ToolPolicy::class],
+            'executionJournal' => ['class' => ExecutionJournal::class],
+            'mcpTokenValidator' => ['class' => McpTokenValidator::class],
+            'mcpServer' => ['class' => McpServer::class],
         ]);
+    }
+
+    public function bootstrap($app): void
+    {
+        if (!$this->mcpEnabled || !$app->has('urlManager')) {
+            return;
+        }
+
+        $route = $this->normalizeMcpRoute();
+        if ($route === '') {
+            return;
+        }
+
+        $app->urlManager->addRules([
+            'POST ' . $route => $this->id . '/mcp/endpoint',
+            'OPTIONS ' . $route => $this->id . '/mcp/endpoint',
+            'GET ' . $route . '/.well-known/oauth-protected-resource' => $this->id . '/mcp/resource-metadata',
+            'GET ' . $route . '/.well-known/oauth-authorization-server' => $this->id . '/mcp/authorization-server-metadata',
+            'GET ' . $route . '/oauth/authorize' => $this->id . '/mcp/authorize',
+            'POST ' . $route . '/oauth/token' => $this->id . '/mcp/token',
+            'POST ' . $route . '/oauth/register' => $this->id . '/mcp/register',
+        ], false);
     }
 
     public function getPermissionChecker(): PermissionChecker
@@ -177,6 +237,26 @@ TEXT;
     public function getToolRegistry(): ToolRegistry
     {
         return $this->get('toolRegistry');
+    }
+
+    public function getToolPolicy(): ToolPolicy
+    {
+        return $this->get('toolPolicy');
+    }
+
+    public function getExecutionJournal(): ExecutionJournal
+    {
+        return $this->get('executionJournal');
+    }
+
+    public function getMcpTokenValidator(): McpTokenValidator
+    {
+        return $this->get('mcpTokenValidator');
+    }
+
+    public function getMcpServer(): McpServer
+    {
+        return $this->get('mcpServer');
     }
 
     public function getContextManager(): ContextManager
@@ -296,6 +376,39 @@ TEXT;
         }
 
         return "Application context:\n" . $applicationContext;
+    }
+
+    public function normalizeMcpRoute(): string
+    {
+        return trim($this->mcpRoute, " \t\n\r\0\x0B/");
+    }
+
+    public function resolveMcpIssuer(): string
+    {
+        if (is_string($this->mcpIssuer) && trim($this->mcpIssuer) !== '') {
+            return rtrim(trim($this->mcpIssuer), '/');
+        }
+
+        if (\Yii::$app && \Yii::$app->has('request')) {
+            return rtrim((string)\Yii::$app->request->hostInfo, '/');
+        }
+
+        return 'yii2-ai-agent';
+    }
+
+    public function buildMcpUrl(string $suffix = '', bool $absolute = true): string
+    {
+        $path = '/' . $this->normalizeMcpRoute() . ($suffix !== '' ? '/' . ltrim($suffix, '/') : '');
+        if (!$absolute || !\Yii::$app || !\Yii::$app->has('request')) {
+            return $path;
+        }
+
+        return rtrim((string)\Yii::$app->request->hostInfo, '/') . $path;
+    }
+
+    public function getMcpSupportedScopes(): array
+    {
+        return array_values(array_unique(array_filter(array_map('strval', $this->mcpScopes))));
     }
 
     private function resolveApplicationContextProvider(mixed $provider): mixed
