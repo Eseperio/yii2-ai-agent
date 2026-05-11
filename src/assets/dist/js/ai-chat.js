@@ -441,6 +441,22 @@
         footer.appendChild(nav);
         form.appendChild(footer);
 
+        attach.addEventListener('click', function () {
+            fileInput.click();
+        });
+        fileInput.addEventListener('change', function () {
+            uploadFiles(fileInput.files).finally(function () { fileInput.value = ''; });
+        });
+        generate.addEventListener('click', function () {
+            if (input.value.trim() === '') {
+                input.value = 'Genera una imagen';
+            } else if (input.value.toLowerCase().indexOf('genera') === -1) {
+                input.value = 'Genera una imagen: ' + input.value;
+            }
+            input.focus();
+            updateComposerState();
+        });
+
         form.addEventListener('submit', function (event) {
             event.preventDefault();
             if (locked || !questionHasAnswer(cardState, currentQuestion)) {
@@ -630,6 +646,48 @@
         return wrapper;
     }
 
+    function renderAttachments(attachments, handlers) {
+        var list = el('div', 'ai-agent-attachments');
+        (attachments || []).forEach(function (asset) {
+            var item = el('div', 'ai-agent-attachment');
+            if (asset.type === 'image' && (asset.preview_url || asset.url)) {
+                var image = document.createElement('img');
+                image.className = 'ai-agent-attachment-image';
+                image.src = asset.preview_url || asset.url;
+                image.alt = asset.filename || '';
+                item.appendChild(image);
+            } else {
+                item.appendChild(el('span', 'ai-agent-attachment-file', asset.filename || 'archivo'));
+            }
+            if (asset.type === 'image' && handlers && handlers.useAssetReference) {
+                var ref = el('button', 'ai-agent-attachment-action', 'Referencia');
+                ref.type = 'button';
+                ref.addEventListener('click', function () {
+                    handlers.useAssetReference(asset);
+                });
+                item.appendChild(ref);
+            }
+            list.appendChild(item);
+        });
+        return list;
+    }
+
+    function renderPendingAssets(state, removeAsset) {
+        var tray = el('div', 'ai-agent-pending-assets');
+        (state.pendingAssets || []).forEach(function (asset, index) {
+            var item = el('div', 'ai-agent-pending-asset');
+            item.appendChild(el('span', '', asset.filename || ('asset #' + asset.id)));
+            var remove = el('button', 'ai-agent-pending-remove', 'x');
+            remove.type = 'button';
+            remove.addEventListener('click', function () {
+                removeAsset(index);
+            });
+            item.appendChild(remove);
+            tray.appendChild(item);
+        });
+        return tray;
+    }
+
     function renderMessage(message, handlers) {
         var node = el('article', 'ai-agent-message ai-agent-message-' + (message.role || 'assistant'));
         if (message.virtual) {
@@ -651,6 +709,9 @@
             body.appendChild(renderContextPreview(message));
         } else {
             body.textContent = message.role === 'user' ? stripQuestionnaireMarker(message.content) : (message.content || '');
+        }
+        if (Array.isArray(message.attachments) && message.attachments.length) {
+            body.appendChild(renderAttachments(message.attachments, handlers));
         }
         node.appendChild(body);
         if (message.message_type && message.message_type !== 'message') {
@@ -688,6 +749,8 @@
             autoApproveTools: false,
             autoApprovingActions: {},
             lastMessages: [],
+            pendingAssets: [],
+            isUploading: false,
             processing: {
                 visible: false,
                 index: 0,
@@ -728,12 +791,28 @@
         var messages = el('div', 'ai-agent-messages');
         var pending = el('div', 'ai-agent-pending-tools');
         var form = el('form', 'ai-agent-form');
+        var fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.multiple = true;
+        fileInput.className = 'ai-agent-file-input';
+        fileInput.hidden = true;
+        var attach = el('button', 'ai-agent-icon-button ai-agent-attach', '+');
+        attach.type = 'button';
+        attach.title = 'Adjuntar archivo';
+        var generate = el('button', 'ai-agent-icon-button ai-agent-generate', 'IA');
+        generate.type = 'button';
+        generate.title = 'Generar imagen con IA';
+        var assetTray = el('div', 'ai-agent-pending-assets-wrap');
         var input = document.createElement('textarea');
         input.className = 'ai-agent-input';
         input.rows = 2;
         input.placeholder = 'Escribe un mensaje';
         var send = el('button', 'ai-agent-send', 'Enviar');
         send.type = 'submit';
+        form.appendChild(fileInput);
+        form.appendChild(assetTray);
+        form.appendChild(attach);
+        form.appendChild(generate);
         form.appendChild(input);
         form.appendChild(send);
         main.appendChild(messages);
@@ -867,7 +946,9 @@
             var disabled = state.busy || state.questionnaireBlocked || permissions.canSendMessage === false;
             input.disabled = disabled;
             input.placeholder = state.questionnaireBlocked ? 'Responde primero al formulario pendiente' : 'Escribe un mensaje';
-            send.disabled = disabled;
+            send.disabled = disabled || (input.value.trim() === '' && state.pendingAssets.length === 0);
+            attach.disabled = state.busy || state.isUploading || !api('uploadAsset');
+            generate.disabled = disabled;
         }
 
         function prepareMessagesForRender(items) {
@@ -983,6 +1064,11 @@
                 },
                 busy: function () {
                     return state.busy;
+                },
+                useAssetReference: function (asset) {
+                    state.pendingAssets.push(asset);
+                    renderPendingAssetTray();
+                    updateComposerState();
                 }
             };
             messages.replaceChildren();
@@ -1189,9 +1275,58 @@
             }, 0);
         }
 
+        function renderPendingAssetTray() {
+            assetTray.replaceChildren();
+            if (!state.pendingAssets.length) {
+                return;
+            }
+            assetTray.appendChild(renderPendingAssets(state, function (index) {
+                state.pendingAssets.splice(index, 1);
+                renderPendingAssetTray();
+                updateComposerState();
+            }));
+        }
+
+        function uploadFiles(files) {
+            if (!api('uploadAsset') || !files || !files.length) {
+                return Promise.resolve();
+            }
+            state.isUploading = true;
+            updateComposerState();
+            var chain = Promise.resolve();
+            Array.prototype.forEach.call(files, function (file) {
+                chain = chain.then(function () {
+                    var formData = new FormData();
+                    formData.append('file', file);
+                    if (state.conversationId) {
+                        formData.append('conversation_id', state.conversationId);
+                    }
+                    var param = csrfParam();
+                    var token = csrfToken();
+                    if (param && token) {
+                        formData.append(param, token);
+                    }
+                    return fetch(api('uploadAsset'), {
+                        method: 'POST',
+                        headers: {'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-Token': token || ''},
+                        body: formData
+                    }).then(parseJsonResponse).then(function (data) {
+                        if (data.success && data.asset) {
+                            state.pendingAssets.push(data.asset);
+                            renderPendingAssetTray();
+                        }
+                    });
+                });
+            });
+            return chain.finally(function () {
+                state.isUploading = false;
+                updateComposerState();
+            });
+        }
+
         function sendMessageValue(rawValue, bypassQuestionnaireBlock) {
             var value = String(rawValue || '').trim();
-            if (!value || state.busy || permissions.canSendMessage === false || (state.questionnaireBlocked && bypassQuestionnaireBlock !== true)) {
+            if ((!value && state.pendingAssets.length === 0) || state.busy || permissions.canSendMessage === false || (state.questionnaireBlocked && bypassQuestionnaireBlock !== true)) {
                 return Promise.resolve();
             }
             var payloadValue = value;
@@ -1199,9 +1334,12 @@
                 payloadValue = state.pendingRejectionNote + '\n\nMensaje del usuario: ' + value;
                 state.pendingRejectionNote = '';
             }
+            var assetIds = state.pendingAssets.map(function (asset) { return asset.id; });
             if (input.value.trim() === value) {
                 input.value = '';
             }
+            state.pendingAssets = [];
+            renderPendingAssetTray();
             setBusy(true);
             startProcessingIndicator();
             var ensureConversation = state.conversationId ? Promise.resolve() : createConversation(true);
@@ -1211,7 +1349,8 @@
                 }
                 return post(api('sendMessage'), {
                     conversation_id: state.conversationId,
-                    message: payloadValue
+                    message: payloadValue,
+                    asset_ids: assetIds
                 }).then(function (data) {
                     renderMessages(data.messages || []);
                     renderPendingTools(data.pending_tools || []);
@@ -1223,10 +1362,27 @@
             });
         }
 
+        attach.addEventListener('click', function () {
+            fileInput.click();
+        });
+        fileInput.addEventListener('change', function () {
+            uploadFiles(fileInput.files).finally(function () { fileInput.value = ''; });
+        });
+        generate.addEventListener('click', function () {
+            if (input.value.trim() === '') {
+                input.value = 'Genera una imagen';
+            } else if (input.value.toLowerCase().indexOf('genera') === -1) {
+                input.value = 'Genera una imagen: ' + input.value;
+            }
+            input.focus();
+            updateComposerState();
+        });
+
         form.addEventListener('submit', function (event) {
             event.preventDefault();
             sendMessageValue(input.value);
         });
+        input.addEventListener('input', updateComposerState);
         input.addEventListener('keydown', function (event) {
             if (event.key !== 'Enter' || event.shiftKey) {
                 return;

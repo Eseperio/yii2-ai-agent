@@ -9,7 +9,8 @@ class SendMessageAction extends BaseChatAction
         $request = $this->request();
         $conversationId = (int)$request->post('conversation_id', 0);
         $message = (string)$request->post('message', '');
-        if ($conversationId <= 0 || trim($message) === '') {
+        $assetIds = $this->normalizeAssetIds($request->post('asset_ids', []));
+        if ($conversationId <= 0 || (trim($message) === '' && $assetIds === [])) {
             return $this->json(['success' => false, 'error' => 'Invalid parameters'], 400);
         }
 
@@ -31,7 +32,10 @@ class SendMessageAction extends BaseChatAction
             return $this->deny();
         }
 
-        $manager->addMessage($conversationId, 'user', 'message', $message);
+        $userMessage = $manager->addMessage($conversationId, 'user', 'message', $message);
+        if ($assetIds !== []) {
+            $manager->linkAssetsToMessage((int)$userMessage->id, $assetIds, \eseperio\aiagent\models\MessageAsset::USAGE_INPUT);
+        }
 
         $requestId = bin2hex(random_bytes(8));
         $preToolSnapshots = [];
@@ -69,7 +73,7 @@ class SendMessageAction extends BaseChatAction
         $payload = [
             'model' => $model,
             'input' => [
-                ['role' => 'user', 'content' => $message],
+                ['role' => 'user', 'content' => $this->buildUserContent($message, $assetIds)],
             ],
             'tools' => $normalizedTools,
             'contexts' => $contexts,
@@ -268,6 +272,54 @@ class SendMessageAction extends BaseChatAction
             'followup' => $followUp,
             'messages' => $manager->getMessagesForDisplay($conversationId),
         ]);
+    }
+
+    private function normalizeAssetIds(mixed $value): array
+    {
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            if (is_array($decoded)) {
+                $value = $decoded;
+            } else {
+                $value = preg_split('/\s*,\s*/', $value, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+            }
+        }
+        if (!is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter(array_map('intval', $value))));
+    }
+
+    private function buildUserContent(string $message, array $assetIds): string|array
+    {
+        if ($assetIds === []) {
+            return $message;
+        }
+
+        $chunks = [];
+        $message = trim($message);
+        if ($message !== '') {
+            $chunks[] = ['type' => 'input_text', 'text' => $message];
+        }
+
+        $class = $this->module()?->assetClass;
+        $assets = $class ? $class::find()->where(['id' => $assetIds])->all() : [];
+        foreach ($assets as $asset) {
+            if (($asset->type ?? null) === \eseperio\aiagent\models\Asset::TYPE_IMAGE) {
+                $chunks[] = [
+                    'type' => 'input_image',
+                    'image_url' => $this->module()->getAssetService()->dataUrl($asset),
+                ];
+                continue;
+            }
+            $chunks[] = [
+                'type' => 'input_text',
+                'text' => 'Archivo adjunto: ' . $asset->filename . ' (' . $asset->mime_type . ').',
+            ];
+        }
+
+        return $chunks ?: $message;
     }
 
     private function resolveAssistantText(array $payload, string $rawText): string

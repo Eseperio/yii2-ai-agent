@@ -446,4 +446,65 @@ class SendMessageApprovalCest
         $I->assertFalse($denied['success'] ?? true);
         $I->assertSame('Forbidden', $denied['error'] ?? null);
     }
+
+    public function testAssetServiceStoresReadsAndServesImageAssets(\FunctionalTester $I): void
+    {
+        $I->sendPost('/ai-agent/chat/create-conversation', []);
+        $I->seeResponseCodeIs(200);
+
+        $module = \Yii::$app->getModule('aiAgent');
+        $contents = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=');
+
+        $asset = $module->getAssetService()->createFromContents(
+            $contents,
+            'tiny.png',
+            'image/png',
+            \eseperio\aiagent\models\Asset::SOURCE_UPLOAD,
+            ['purpose' => 'storage-test']
+        );
+
+        $I->assertSame(\eseperio\aiagent\models\Asset::TYPE_IMAGE, $asset->type);
+        $I->assertSame('image/png', $asset->mime_type);
+        $I->assertSame(1, (int)$asset->width);
+        $I->assertSame(1, (int)$asset->height);
+        $I->assertSame($contents, $module->getAssetService()->read($asset));
+
+        $display = $asset->toDisplayArray();
+        $I->assertNotEmpty($display['url']);
+        $I->assertNotEmpty($display['preview_url']);
+
+        $I->sendGet('/ai-agent/chat/asset?id=' . $asset->id . '&token=' . urlencode($asset->public_token));
+        $I->seeResponseCodeIs(200);
+        $I->assertStringContainsString('PNG', $I->grabResponse());
+    }
+
+    public function testGenerateImageToolCreatesChatAssetAttachment(\FunctionalTester $I): void
+    {
+        $I->sendPost('/ai-agent/chat/create-conversation', []);
+        $conversation = json_decode($I->grabResponse(), true)['conversation'] ?? null;
+        $I->assertIsArray($conversation);
+
+        $I->sendPost('/ai-agent/chat/send-message', [
+            'conversation_id' => $conversation['id'],
+            'message' => 'generate-image',
+        ]);
+
+        $response = json_decode($I->grabResponse(), true);
+        $I->assertTrue($response['success'] ?? false);
+        $I->assertNotEmpty($response['auto_executed_tools'] ?? []);
+        $I->assertSame('generate_image', $response['auto_executed_tools'][0]['name'] ?? null);
+
+        $asset = \eseperio\aiagent\models\Asset::find()
+            ->where(['source' => \eseperio\aiagent\models\Asset::SOURCE_GENERATED, 'type' => \eseperio\aiagent\models\Asset::TYPE_IMAGE])
+            ->orderBy(['id' => SORT_DESC])
+            ->one();
+        $I->assertNotNull($asset);
+
+        $assetMessages = array_values(array_filter($response['messages'] ?? [], static function (array $message): bool {
+            return ($message['message_type'] ?? null) === 'asset' && !empty($message['attachments']);
+        }));
+        $I->assertNotEmpty($assetMessages);
+        $I->assertSame((int)$asset->id, (int)($assetMessages[0]['attachments'][0]['id'] ?? 0));
+    }
+
 }

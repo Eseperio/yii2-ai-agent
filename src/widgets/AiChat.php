@@ -123,6 +123,7 @@ class AiChat extends Widget
             'archiveConversation' => $this->routeUrl('archive-conversation'),
             'deleteConversation' => $this->routeUrl('delete-conversation'),
             'sendMessage' => $this->routeUrl('send-message'),
+            'uploadAsset' => $this->routeUrl('upload-asset'),
             'executeTool' => $this->routeUrl('execute-tool'),
             'renderContexts' => $this->routeUrl('render-contexts'),
         ];

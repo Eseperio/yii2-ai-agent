@@ -5,6 +5,7 @@ namespace eseperio\aiagent\services;
 use eseperio\aiagent\dto\ToolContext;
 use eseperio\aiagent\dto\ToolDefinition;
 use eseperio\aiagent\contracts\ToolProviderInterface;
+use eseperio\aiagent\services\ImageToolProvider;
 use yii\base\Component;
 
 class ToolRegistry extends Component
@@ -13,6 +14,9 @@ class ToolRegistry extends Component
     {
         $module = $this->getModule();
         $tools = $module?->tools ?? [];
+        if ($module?->imageToolsEnabled) {
+            $tools = array_merge($tools, (new ImageToolProvider())->getTools($context));
+        }
         foreach ($module?->toolProviders ?? [] as $provider) {
             $providerInstance = is_callable($provider) || is_object($provider) ? $provider : \Yii::createObject($provider);
             if ($providerInstance instanceof ToolProviderInterface) {

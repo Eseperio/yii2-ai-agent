@@ -159,17 +159,49 @@ class ConversationManager extends Component
             $conversation->save(false, ['last_message_at', 'last_response_id', 'input_tokens_total', 'output_tokens_total', 'total_tokens_total', 'updated_at']);
         }
 
+        $module = $this->getModule();
+        if ($module instanceof \eseperio\aiagent\Module
+            && is_callable($module->tokenUsageRecorder)
+            && $message->role === 'assistant'
+            && $message->total_tokens > 0
+        ) {
+            call_user_func($module->tokenUsageRecorder, $message, $conversation, $module);
+        }
+
         return $message;
     }
 
     public function getMessagesForDisplay(int $conversationId): array
     {
         $class = $this->messageClass();
-        return $class::find()
+        $messages = $class::find()
             ->where(['conversation_id' => $conversationId])
             ->orderBy(['created_at' => SORT_ASC, 'id' => SORT_ASC])
             ->asArray()
             ->all();
+
+        return $this->appendAttachments($messages);
+    }
+
+    public function linkAssetsToMessage(int $messageId, array $assetIds, string $usage = \eseperio\aiagent\models\MessageAsset::USAGE_INPUT): void
+    {
+        $messageAssetClass = $this->messageAssetClass();
+        foreach (array_values(array_unique(array_filter(array_map('intval', $assetIds)))) as $assetId) {
+            if ($assetId <= 0) {
+                continue;
+            }
+            $exists = $messageAssetClass::find()
+                ->where(['message_id' => $messageId, 'asset_id' => $assetId, 'usage' => $usage])
+                ->exists();
+            if ($exists) {
+                continue;
+            }
+            $link = new $messageAssetClass();
+            $link->message_id = $messageId;
+            $link->asset_id = $assetId;
+            $link->usage = $usage;
+            $link->save(false);
+        }
     }
 
     public function findLastResponseIdForContinuation(int $conversationId): ?string
@@ -192,6 +224,33 @@ class ConversationManager extends Component
             : null;
     }
 
+    private function appendAttachments(array $messages): array
+    {
+        $messageIds = array_values(array_filter(array_map(static fn($message): int => (int)($message['id'] ?? 0), $messages)));
+        if ($messageIds === []) {
+            return $messages;
+        }
+
+        $messageAssetClass = $this->messageAssetClass();
+        $links = $messageAssetClass::find()->where(['message_id' => $messageIds])->all();
+        $byMessage = [];
+        foreach ($links as $link) {
+            $asset = $link->asset;
+            if ($asset && method_exists($asset, 'toDisplayArray')) {
+                $item = $asset->toDisplayArray();
+                $item['usage'] = $link->usage;
+                $byMessage[(int)$link->message_id][] = $item;
+            }
+        }
+
+        foreach ($messages as &$message) {
+            $message['attachments'] = $byMessage[(int)($message['id'] ?? 0)] ?? [];
+        }
+        unset($message);
+
+        return $messages;
+    }
+
     private function getModule(): ?\eseperio\aiagent\Module
     {
         return \eseperio\aiagent\Module::resolveActive();
@@ -205,5 +264,10 @@ class ConversationManager extends Component
     private function messageClass(): string
     {
         return $this->getModule()?->messageClass ?: Message::class;
+    }
+
+    private function messageAssetClass(): string
+    {
+        return $this->getModule()?->messageAssetClass ?: \eseperio\aiagent\models\MessageAsset::class;
     }
 }

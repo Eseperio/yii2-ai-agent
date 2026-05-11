@@ -45,6 +45,36 @@ class OpenAiResponsesClient extends Component implements AiClientInterface
         }
     }
 
+    public function createImageGeneration(array $payload): array
+    {
+        if ($this->apiKey === 'test') {
+            return $this->fakeImageResponse();
+        }
+
+        return $this->requestJson('images/generations', [\GuzzleHttp\RequestOptions::JSON => $payload]);
+    }
+
+    public function createImageEdit(array $fields, array $imageFiles): array
+    {
+        if ($this->apiKey === 'test') {
+            return $this->fakeImageResponse();
+        }
+
+        $multipart = [];
+        foreach ($fields as $name => $contents) {
+            $multipart[] = ['name' => (string)$name, 'contents' => (string)$contents];
+        }
+        foreach ($imageFiles as $file) {
+            $multipart[] = [
+                'name' => 'image[]',
+                'contents' => fopen($file, 'rb'),
+                'filename' => basename($file),
+            ];
+        }
+
+        return $this->requestJson('images/edits', [\GuzzleHttp\RequestOptions::MULTIPART => $multipart]);
+    }
+
     public function createResponse(array $payload): array
     {
         if ($this->apiKey === 'test') {
@@ -62,5 +92,43 @@ class OpenAiResponsesClient extends Component implements AiClientInterface
 
         $response = $this->client->responses()->create($payload);
         return is_object($response) && method_exists($response, 'toArray') ? $response->toArray() : (array)$response;
+    }
+
+    private function requestJson(string $path, array $options): array
+    {
+        if ($this->apiKey === '') {
+            throw new InvalidConfigException('OpenAI client is not configured.');
+        }
+        $headers = [
+            'Authorization' => 'Bearer ' . $this->apiKey,
+        ];
+        if ($this->organization) {
+            $headers['OpenAI-Organization'] = $this->organization;
+        }
+        if ($this->project) {
+            $headers['OpenAI-Project'] = $this->project;
+        }
+        $options['headers'] = array_merge($headers, $options['headers'] ?? []);
+        if ($this->timeout !== null) {
+            $options['timeout'] ??= $this->timeout;
+        }
+        if ($this->connectTimeout !== null) {
+            $options['connect_timeout'] ??= $this->connectTimeout;
+        }
+
+        $client = new GuzzleClient(array_merge(['base_uri' => 'https://api.openai.com/v1/'], $this->httpClientOptions));
+        $response = $client->post($path, $options);
+        $decoded = json_decode((string)$response->getBody(), true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    private function fakeImageResponse(): array
+    {
+        return [
+            'created' => time(),
+            'data' => [[
+                'b64_json' => 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+            ]],
+        ];
     }
 }

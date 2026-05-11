@@ -10,6 +10,9 @@ class FakeOpenAiResponseFactory
         if (is_string($input) && str_contains($input, 'function_call_output')) {
             return $this->afterToolResultResponse();
         }
+        if (is_string($input) && str_contains($input, 'generate-image')) {
+            return $this->imageToolResponse();
+        }
         if (is_string($input) && str_contains($input, 'auto-tool-many')) {
             return $this->autoToolManyResponse();
         }
@@ -54,6 +57,37 @@ class FakeOpenAiResponseFactory
             ],
             default => $this->simpleResponse(),
         };
+    }
+
+
+    private function imageToolResponse(): array
+    {
+        return [
+            'id' => 'resp_fake_image',
+            'status' => 'completed',
+            'output' => [[
+                'type' => 'message',
+                'content' => [[
+                    'type' => 'output_text',
+                    'text' => json_encode([
+                        'response' => 'Genero una imagen para revisar.',
+                        'conversation_title_suggestion' => 'Imagen',
+                        'questionnaire' => [
+                            'enabled' => false,
+                            'title' => '',
+                            'description' => '',
+                            'questions' => [],
+                        ],
+                    ]),
+                ], [
+                    'type' => 'tool_call',
+                    'name' => 'generate_image',
+                    'arguments' => ['prompt' => 'Imagen de prueba'],
+                    'id' => 'call_image_1',
+                ]],
+            ]],
+            'usage' => ['input_tokens' => 1, 'output_tokens' => 1, 'total_tokens' => 2],
+        ];
     }
 
     private function simpleResponse(): array

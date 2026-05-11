@@ -3,10 +3,13 @@
 namespace eseperio\aiagent;
 
 use eseperio\aiagent\services\AiClientFactory;
+use eseperio\aiagent\services\AssetService;
+use eseperio\aiagent\services\AssetStorage;
 use eseperio\aiagent\services\ConversationManager;
 use eseperio\aiagent\services\ContextManager;
 use eseperio\aiagent\services\ContextRenderer;
 use eseperio\aiagent\services\AiResponseService;
+use eseperio\aiagent\services\ImageGenerationService;
 use eseperio\aiagent\services\ManualRegistry;
 use eseperio\aiagent\services\McpServer;
 use eseperio\aiagent\services\McpTokenValidator;
@@ -111,6 +114,12 @@ Interaction contract:
 - If the user just answered a questionnaire, continue from those answers. If more information is still required, return a new questionnaire instead of asking in prose.
 - If no user question is needed, set `questionnaire.enabled=false`, `title=""`, `description=""`, and `questions=[]`.
 
+Image and attachment contract:
+- The chat may contain uploaded or generated assets. Image assets can be used as visual context or references.
+- Use `generate_image` to create a new chat image asset. Use `edit_image` when the user asks to edit or derive from reference image assets.
+- Generated and edited images are safe preview actions and are stored as chat assets only. Attaching them to business entities must be done by a separate application tool that can require confirmation.
+- Do not claim that an asset was attached to a product, gallery, or external entity unless a domain tool result confirms it.
+
 Tool contract:
 - Use the available tools for actions, searches, reads, writes, context changes, and any application operation that should affect real data.
 - Do not claim that a real action was completed unless a tool result confirms it.
@@ -185,6 +194,15 @@ TEXT;
     public string $contextClass = \eseperio\aiagent\models\Context::class;
     public string $toolSnapshotClass = \eseperio\aiagent\models\ToolSnapshot::class;
     public string $executionClass = \eseperio\aiagent\models\Execution::class;
+    public string $assetClass = \eseperio\aiagent\models\Asset::class;
+    public string $messageAssetClass = \eseperio\aiagent\models\MessageAsset::class;
+    public string $assetTargetClass = \eseperio\aiagent\models\AssetTarget::class;
+    public array $assetStorageConfig = [];
+    public array $assetServiceConfig = [];
+    public array $imageGenerationConfig = [];
+    public bool $imageToolsEnabled = true;
+    public array $assetTargetHandlers = [];
+    public $tokenUsageRecorder = null;
 
     public function init(): void
     {
@@ -205,6 +223,9 @@ TEXT;
             'executionJournal' => ['class' => ExecutionJournal::class],
             'mcpTokenValidator' => ['class' => McpTokenValidator::class],
             'mcpServer' => ['class' => McpServer::class],
+            'assetStorage' => array_merge(['class' => AssetStorage::class], $this->assetStorageConfig),
+            'assetService' => array_merge(['class' => AssetService::class], $this->assetServiceConfig),
+            'imageGenerationService' => array_merge(['class' => ImageGenerationService::class], $this->imageGenerationConfig),
         ]);
     }
 
@@ -298,6 +319,21 @@ TEXT;
     public function getManualRegistry(): ManualRegistry
     {
         return $this->get('manualRegistry');
+    }
+
+    public function getAssetStorage(): AssetStorage
+    {
+        return $this->get('assetStorage');
+    }
+
+    public function getAssetService(): AssetService
+    {
+        return $this->get('assetService');
+    }
+
+    public function getImageGenerationService(): ImageGenerationService
+    {
+        return $this->get('imageGenerationService');
     }
 
     public function resolveModel(?string $widgetModel = null, ?string $conversationModel = null): string
