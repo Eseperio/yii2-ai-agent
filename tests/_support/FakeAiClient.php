@@ -73,6 +73,14 @@ class FakeAiClient implements AiClientInterface
         ];
     }
 
+    public function createTranscription(array $fields, string $filePath, ?string $fileName = null): array
+    {
+        return [
+            'text' => (string)($fields['prompt'] ?? 'fake-transcription'),
+            'language' => 'es',
+        ];
+    }
+
     private function fakeImageResponse(): array
     {
         return [

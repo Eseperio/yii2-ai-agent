@@ -5,6 +5,7 @@ namespace eseperio\aiagent;
 use eseperio\aiagent\services\AiClientFactory;
 use eseperio\aiagent\services\AssetService;
 use eseperio\aiagent\services\AssetStorage;
+use eseperio\aiagent\services\AudioTranscriptionService;
 use eseperio\aiagent\services\ConversationManager;
 use eseperio\aiagent\services\ContextManager;
 use eseperio\aiagent\services\ContextRenderer;
@@ -26,6 +27,9 @@ class Module extends BaseModule implements BootstrapInterface
 {
     public $controllerNamespace = 'eseperio\\aiagent\\controllers';
     public string $defaultModel = 'gpt-5.2-2025-12-11';
+    public bool $dictationEnabled = true;
+    public string $defaultTranscriptionModel = 'gpt-4o-mini-transcribe';
+    public bool $autoSendTranscription = true;
     public array $clientConfig = [];
     public ?string $serviceTier = null;
     public bool $enabled = true;
@@ -199,6 +203,7 @@ TEXT;
     public string $assetTargetClass = \eseperio\aiagent\models\AssetTarget::class;
     public array $assetStorageConfig = [];
     public array $assetServiceConfig = [];
+    public array $audioTranscriptionConfig = [];
     public array $imageGenerationConfig = [];
     public bool $imageToolsEnabled = true;
     public array $assetTargetHandlers = [];
@@ -225,6 +230,7 @@ TEXT;
             'mcpServer' => ['class' => McpServer::class],
             'assetStorage' => array_merge(['class' => AssetStorage::class], $this->assetStorageConfig),
             'assetService' => array_merge(['class' => AssetService::class], $this->assetServiceConfig),
+            'audioTranscriptionService' => array_merge(['class' => AudioTranscriptionService::class], $this->audioTranscriptionConfig),
             'imageGenerationService' => array_merge(['class' => ImageGenerationService::class], $this->imageGenerationConfig),
         ]);
     }
@@ -336,6 +342,11 @@ TEXT;
         return $this->get('imageGenerationService');
     }
 
+    public function getAudioTranscriptionService(): AudioTranscriptionService
+    {
+        return $this->get('audioTranscriptionService');
+    }
+
     public function resolveModel(?string $widgetModel = null, ?string $conversationModel = null): string
     {
         $widgetModel = is_string($widgetModel) ? trim($widgetModel) : '';
@@ -349,6 +360,16 @@ TEXT;
         }
 
         return $this->defaultModel;
+    }
+
+    public function resolveTranscriptionModel(?string $requestedModel = null): string
+    {
+        $requestedModel = is_string($requestedModel) ? trim($requestedModel) : '';
+        if ($requestedModel !== '') {
+            return $requestedModel;
+        }
+
+        return trim($this->defaultTranscriptionModel) !== '' ? trim($this->defaultTranscriptionModel) : 'gpt-4o-mini-transcribe';
     }
 
     public function getAutoExecutionMaxIterations(): int

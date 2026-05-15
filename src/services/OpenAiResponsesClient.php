@@ -94,6 +94,31 @@ class OpenAiResponsesClient extends Component implements AiClientInterface
         return is_object($response) && method_exists($response, 'toArray') ? $response->toArray() : (array)$response;
     }
 
+    public function createTranscription(array $fields, string $filePath, ?string $fileName = null): array
+    {
+        if ($this->apiKey === 'test') {
+            return [
+                'text' => (string)($fields['prompt'] ?? 'Transcripción de prueba'),
+                'language' => 'es',
+            ];
+        }
+
+        $multipart = [];
+        foreach ($fields as $name => $contents) {
+            if ($contents === null || $contents === '') {
+                continue;
+            }
+            $multipart[] = ['name' => (string)$name, 'contents' => (string)$contents];
+        }
+        $multipart[] = [
+            'name' => 'file',
+            'contents' => fopen($filePath, 'rb'),
+            'filename' => $fileName ?: basename($filePath),
+        ];
+
+        return $this->requestJson('audio/transcriptions', [\GuzzleHttp\RequestOptions::MULTIPART => $multipart]);
+    }
+
     private function requestJson(string $path, array $options): array
     {
         if ($this->apiKey === '') {

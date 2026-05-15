@@ -478,6 +478,57 @@ class SendMessageApprovalCest
         $I->assertStringContainsString('PNG', $I->grabResponse());
     }
 
+    public function testProcessAudioReturnsTranscription(\FunctionalTester $I): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'ai-audio-');
+        file_put_contents($path, "RIFF\x24\x00\x00\x00WAVEfmt ");
+
+        $I->sendPost('/ai-agent/chat/process-audio', [], [
+            'audio' => [
+                'name' => 'note.wav',
+                'type' => 'audio/wav',
+                'error' => UPLOAD_ERR_OK,
+                'size' => filesize($path),
+                'tmp_name' => $path,
+            ],
+        ]);
+
+        @unlink($path);
+
+        $I->seeResponseCodeIs(200);
+        $response = json_decode($I->grabResponse(), true);
+        $I->assertTrue($response['success'] ?? false);
+        $I->assertSame('Transcripción de prueba', $response['transcription'] ?? null);
+        $I->assertSame('gpt-4o-mini-transcribe', $response['transcription_model'] ?? null);
+    }
+
+    public function testProcessAudioWithPromptReturnsOutput(\FunctionalTester $I): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'ai-audio-');
+        file_put_contents($path, "RIFF\x24\x00\x00\x00WAVEfmt ");
+
+        $I->sendPost('/ai-agent/chat/process-audio', [
+            'prompt' => 'Resume estas notas',
+        ], [
+            'audio' => [
+                'name' => 'note.wav',
+                'type' => 'audio/wav',
+                'error' => UPLOAD_ERR_OK,
+                'size' => filesize($path),
+                'tmp_name' => $path,
+            ],
+        ]);
+
+        @unlink($path);
+
+        $I->seeResponseCodeIs(200);
+        $response = json_decode($I->grabResponse(), true);
+        $I->assertTrue($response['success'] ?? false);
+        $I->assertSame('Resume estas notas', $response['transcription'] ?? null);
+        $I->assertSame('fake-response', $response['output'] ?? null);
+        $I->assertNotEmpty($response['response_id'] ?? null);
+    }
+
     public function testGenerateImageToolCreatesChatAssetAttachment(\FunctionalTester $I): void
     {
         $I->sendPost('/ai-agent/chat/create-conversation', []);

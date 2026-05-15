@@ -42,6 +42,11 @@ class CapturingAiClient implements \eseperio\aiagent\services\AiClientInterface
             'status' => 'completed',
         ];
     }
+
+    public function createTranscription(array $fields, string $filePath, ?string $fileName = null): array
+    {
+        return ['text' => 'captured transcription'];
+    }
 }
 
 class CapturingAiClientFactory extends \eseperio\aiagent\services\AiClientFactory

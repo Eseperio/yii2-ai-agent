@@ -25,6 +25,9 @@ return [
             'class' => \eseperio\aiagent\Module::class,
             'enabled' => true,
             'defaultModel' => 'gpt-5.2-2025-12-11',
+            'dictationEnabled' => true,
+            'defaultTranscriptionModel' => 'gpt-4o-mini-transcribe',
+            'autoSendTranscription' => true,
             'autoExecutionMaxIterations' => 8,
             'clientConfig' => [
                 'apiKey' => getenv('OPENAI_API_KEY'),
@@ -38,6 +41,9 @@ return [
 ```
 
 `defaultModel` es el modelo por defecto del modulo. El widget puede sobreescribirlo con su parametro `model` cuando el permiso `canUseModel` lo permita.
+`dictationEnabled` muestra u oculta el dictado en el chat y habilita el widget interno de microfono. `defaultTranscriptionModel`
+define el modelo usado al transcribir audio; por defecto usa `gpt-4o-mini-transcribe`. `autoSendTranscription` controla si el chat
+envia automaticamente el mensaje al terminar la transcripcion.
 Si prefieres otro ID de modulo, usa el mismo valor en la configuracion y en tus rutas; la libreria no depende de que el ID sea exactamente `aiAgent`. En los ejemplos siguientes se usa el ID `aiAgent`; si configuras el modulo como `ai-agent`, las rutas seran `/ai-agent/chat/...`.
 
 Por defecto el modulo solicita a OpenAI una respuesta estructurada con `text.format` JSON schema. La respuesta debe traer
@@ -60,6 +66,9 @@ echo \eseperio\aiagent\widgets\AiChat::widget([
     'mode' => \eseperio\aiagent\widgets\AiChat::MODE_FLOATING,
     'position' => \eseperio\aiagent\widgets\AiChat::POSITION_BOTTOM_RIGHT,
     'model' => 'gpt-5.4-mini',
+    'dictationEnabled' => true,
+    'transcriptionModel' => 'gpt-4o-mini-transcribe',
+    'autoSendTranscription' => true,
     'autoOpen' => true,
 ]);
 ```
@@ -74,6 +83,29 @@ echo \eseperio\aiagent\widgets\AiChat::widget([
 ```
 
 `mode` admite `floating` o `page`. `position` solo aplica en modo flotante y acepta `bottom-right`, `bottom-left`, `top-right` o `top-left`.
+`dictationEnabled`, `transcriptionModel` y `autoSendTranscription` permiten activar o afinar el dictado por widget sin cambiar la
+configuracion global del modulo.
+
+## Widget interno de microfono
+
+Puedes reutilizar el microfono como widget independiente cuando quieras transcribir y procesar audio con un prompt sin mostrar nada
+en el chat.
+
+```php
+echo \eseperio\aiagent\widgets\AiMicrophone::widget([
+    'prompt' => 'Corrige y mejora estas notas para devolverlas como texto listo para pegar.',
+    'eventName' => 'notes:processed',
+]);
+```
+
+Al terminar, el widget lanza un `CustomEvent` JavaScript con `detail.transcription`, `detail.output`, `detail.responseId` y
+`detail.language`, por ejemplo:
+
+```js
+document.addEventListener('notes:processed', function (event) {
+    console.log(event.detail.output);
+});
+```
 
 ## Permisos
 

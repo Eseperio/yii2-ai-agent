@@ -4,6 +4,7 @@ namespace eseperio\aiagent\tests\unit;
 
 use eseperio\aiagent\Module;
 use eseperio\aiagent\widgets\AiChat;
+use eseperio\aiagent\widgets\AiMicrophone;
 use PHPUnit\Framework\TestCase;
 
 class WidgetTest extends TestCase
@@ -15,6 +16,7 @@ class WidgetTest extends TestCase
         \Yii::$app->setModule('aiAgent', [
             'class' => Module::class,
             'defaultModel' => 'gpt-test-default',
+            'defaultTranscriptionModel' => 'gpt-test-transcribe',
             'enabled' => true,
             'permissions' => [
                 'canViewChat' => true,
@@ -47,11 +49,14 @@ class WidgetTest extends TestCase
         $widget->model = 'gpt-widget';
         $widget->conversationId = null;
         $widget->contexts = [['type' => 10]];
-        $widget->apiUrls = ['/api/chat'];
+        $widget->apiUrls = ['sendMessage' => '/api/chat'];
         $widget->autoOpen = true;
         $widget->showConversationList = false;
         $widget->conversationUrlParam = 'chat_id';
         $widget->toolsExecutedCallback = 'window.onToolsExecuted';
+        $widget->dictationEnabled = true;
+        $widget->transcriptionModel = 'gpt-widget-transcribe';
+        $widget->autoSendTranscription = false;
 
         $props = $widget->exposeProps();
 
@@ -59,15 +64,41 @@ class WidgetTest extends TestCase
         $this->assertSame('top-left', $props['position']);
         $this->assertSame('gpt-widget', $props['model']);
         $this->assertSame([['type' => 10]], $props['contexts']);
-        $this->assertSame(['/api/chat'], $props['apiUrls']);
+        $this->assertSame('/api/chat', $props['apiUrls']['sendMessage']);
         $this->assertTrue($props['autoOpen']);
         $this->assertFalse($props['showConversationList']);
         $this->assertSame('chat_id', $props['conversationUrlParam']);
         $this->assertSame('window.onToolsExecuted', $props['toolsExecutedCallback']);
+        $this->assertTrue($props['dictation']['enabled']);
+        $this->assertSame('gpt-widget-transcribe', $props['dictation']['model']);
+        $this->assertFalse($props['dictation']['autoSend']);
         $this->assertCount(20, $props['welcomeMessages']);
         $this->assertSame('Hola, ¿qué hacemos hoy?', $props['welcomeMessages'][0]);
         $this->assertTrue($props['permissions']['canViewChat']);
         $this->assertTrue($props['permissions']['canUseModel']);
+        $this->assertArrayHasKey('processAudio', $props['apiUrls']);
+    }
+
+    public function testMicrophoneWidgetBuildPropsUsesDefaults(): void
+    {
+        $widget = new class extends AiMicrophone {
+            public function exposeProps(): array
+            {
+                return $this->buildProps($this->getModule());
+            }
+        };
+
+        $widget->prompt = 'Mejora estas notas';
+        $widget->eventName = 'custom:mic';
+
+        $props = $widget->exposeProps();
+
+        $this->assertSame('Mejora estas notas', $props['prompt']);
+        $this->assertSame('gpt-test-default', $props['model']);
+        $this->assertSame('gpt-test-transcribe', $props['transcriptionModel']);
+        $this->assertSame('custom:mic', $props['eventName']);
+        $this->assertSame('🎤', $props['label']);
+        $this->assertArrayHasKey('processAudio', $props['apiUrls']);
     }
 
     public function testModuleAlternatesWelcomeMessageByConversationId(): void

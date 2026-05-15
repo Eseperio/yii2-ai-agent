@@ -101,6 +101,85 @@
         });
     }
 
+    function supportsAudioRecording() {
+        return !!(window.MediaRecorder && navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function');
+    }
+
+    function guessAudioFilename(mimeType) {
+        var map = {
+            'audio/webm': 'recording.webm',
+            'audio/ogg': 'recording.ogg',
+            'audio/wav': 'recording.wav',
+            'audio/x-wav': 'recording.wav',
+            'audio/mp4': 'recording.m4a',
+            'audio/m4a': 'recording.m4a',
+            'audio/x-m4a': 'recording.m4a',
+            'audio/mpeg': 'recording.mp3',
+            'audio/mp3': 'recording.mp3'
+        };
+        return map[mimeType] || 'recording.webm';
+    }
+
+    function appendComposerValue(currentValue, nextValue) {
+        var current = String(currentValue || '').trim();
+        var next = String(nextValue || '').trim();
+        if (current === '') {
+            return next;
+        }
+        if (next === '') {
+            return current;
+        }
+        return current + '\n' + next;
+    }
+
+    function createAudioRecorder(onComplete) {
+        if (!supportsAudioRecording()) {
+            return Promise.reject(new Error('El navegador no soporta grabación de audio.'));
+        }
+        return navigator.mediaDevices.getUserMedia({audio: true}).then(function (stream) {
+            var recorder = new MediaRecorder(stream);
+            var chunks = [];
+            recorder.addEventListener('dataavailable', function (event) {
+                if (event.data && event.data.size > 0) {
+                    chunks.push(event.data);
+                }
+            });
+            recorder.addEventListener('stop', function () {
+                stream.getTracks().forEach(function (track) {
+                    track.stop();
+                });
+                onComplete(new Blob(chunks, {type: recorder.mimeType || 'audio/webm'}), recorder.mimeType || 'audio/webm');
+            });
+            return recorder;
+        });
+    }
+
+    function postAudio(url, blob, filename, payload) {
+        var formData = new FormData();
+        formData.append('audio', blob, filename || 'recording.webm');
+        Object.keys(payload || {}).forEach(function (key) {
+            if (payload[key] !== null && payload[key] !== undefined && payload[key] !== '') {
+                formData.append(key, payload[key]);
+            }
+        });
+        var param = csrfParam();
+        var token = csrfToken();
+        if (param && token) {
+            formData.append(param, token);
+        }
+        return fetch(url, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-Token': token || ''
+            },
+            body: formData
+        }).then(function (response) {
+            return parseJsonResponse(response);
+        });
+    }
+
     function text(value) {
         return document.createTextNode(value == null ? '' : String(value));
     }
@@ -737,6 +816,7 @@
         var props = parseProps(node);
         var urls = props.apiUrls || {};
         var permissions = props.permissions || {};
+        var dictation = props.dictation || {};
         var conversationUrlParam = String(props.conversationUrlParam || 'conversation_id').trim();
         var initialConversationId = props.conversationId || readConversationIdFromUrl(conversationUrlParam);
         var state = {
@@ -751,6 +831,9 @@
             lastMessages: [],
             pendingAssets: [],
             isUploading: false,
+            isRecording: false,
+            isTranscribing: false,
+            recorder: null,
             processing: {
                 visible: false,
                 index: 0,
@@ -802,6 +885,10 @@
         var generate = el('button', 'ai-agent-icon-button ai-agent-generate', 'IA');
         generate.type = 'button';
         generate.title = 'Generar imagen con IA';
+        var dictate = el('button', 'ai-agent-icon-button ai-agent-dictate', '🎤');
+        dictate.type = 'button';
+        dictate.title = 'Iniciar dictado';
+        dictate.hidden = !dictation.enabled;
         var assetTray = el('div', 'ai-agent-pending-assets-wrap');
         var input = document.createElement('textarea');
         input.className = 'ai-agent-input';
@@ -813,6 +900,7 @@
         form.appendChild(assetTray);
         form.appendChild(attach);
         form.appendChild(generate);
+        form.appendChild(dictate);
         form.appendChild(input);
         form.appendChild(send);
         main.appendChild(messages);
@@ -944,11 +1032,15 @@
 
         function updateComposerState() {
             var disabled = state.busy || state.questionnaireBlocked || permissions.canSendMessage === false;
-            input.disabled = disabled;
+            input.disabled = disabled || state.isRecording || state.isTranscribing;
             input.placeholder = state.questionnaireBlocked ? 'Responde primero al formulario pendiente' : 'Escribe un mensaje';
-            send.disabled = disabled || (input.value.trim() === '' && state.pendingAssets.length === 0);
-            attach.disabled = state.busy || state.isUploading || !api('uploadAsset');
+            send.disabled = disabled || state.isRecording || state.isTranscribing || (input.value.trim() === '' && state.pendingAssets.length === 0);
+            attach.disabled = state.busy || state.isUploading || state.isRecording || state.isTranscribing || !api('uploadAsset');
             generate.disabled = disabled;
+            dictate.disabled = disabled || state.isTranscribing || !dictation.enabled || !api('processAudio') || !supportsAudioRecording();
+            dictate.classList.toggle('is-recording', state.isRecording);
+            dictate.classList.toggle('is-loading', state.isTranscribing);
+            dictate.title = state.isRecording ? 'Detener dictado' : 'Iniciar dictado';
         }
 
         function prepareMessagesForRender(items) {
@@ -1324,6 +1416,66 @@
             });
         }
 
+        function applyTranscription(textValue) {
+            var nextValue = appendComposerValue(input.value, textValue);
+            if (!nextValue) {
+                return Promise.resolve();
+            }
+            if (dictation.autoSend) {
+                input.value = nextValue;
+                updateComposerState();
+                return sendMessageValue(nextValue);
+            }
+            input.value = nextValue;
+            input.focus();
+            updateComposerState();
+            return Promise.resolve();
+        }
+
+        function transcribeAudio(blob, mimeType) {
+            if (!api('processAudio')) {
+                return Promise.resolve();
+            }
+            state.isTranscribing = true;
+            updateComposerState();
+            return postAudio(api('processAudio'), blob, guessAudioFilename(mimeType), {
+                transcription_model: dictation.model || ''
+            }).then(function (data) {
+                if (!data.success) {
+                    throw new Error(data.error || 'No se pudo transcribir el audio.');
+                }
+                return applyTranscription(data.transcription || '');
+            }).catch(function (error) {
+                window.alert(error && error.message ? error.message : 'No se pudo transcribir el audio.');
+            }).finally(function () {
+                state.isTranscribing = false;
+                updateComposerState();
+            });
+        }
+
+        function toggleDictation() {
+            if (state.isRecording && state.recorder) {
+                state.recorder.stop();
+                state.recorder = null;
+                state.isRecording = false;
+                updateComposerState();
+                return;
+            }
+            createAudioRecorder(function (blob, mimeType) {
+                state.isRecording = false;
+                state.recorder = null;
+                updateComposerState();
+                transcribeAudio(blob, mimeType);
+            }).then(function (recorder) {
+                state.recorder = recorder;
+                state.isRecording = true;
+                updateComposerState();
+                recorder.start();
+            }).catch(function (error) {
+                window.alert(error && error.message ? error.message : 'No se pudo iniciar la grabación.');
+            });
+        }
+
         function sendMessageValue(rawValue, bypassQuestionnaireBlock) {
             var value = String(rawValue || '').trim();
             if ((!value && state.pendingAssets.length === 0) || state.busy || permissions.canSendMessage === false || (state.questionnaireBlocked && bypassQuestionnaireBlock !== true)) {
@@ -1377,6 +1529,7 @@
             input.focus();
             updateComposerState();
         });
+        dictate.addEventListener('click', toggleDictation);
 
         form.addEventListener('submit', function (event) {
             event.preventDefault();
@@ -1411,7 +1564,91 @@
             .then(scrollMessagesToBottom);
     }
 
+    function initMicrophone(node) {
+        var props = parseProps(node);
+        var urls = props.apiUrls || {};
+        var state = {
+            isRecording: false,
+            isLoading: false,
+            recorder: null
+        };
+        var button = el('button', 'ai-agent-icon-button ai-agent-microphone-button', props.label || '🎤');
+        button.type = 'button';
+        button.title = props.title || 'Grabar audio';
+        node.appendChild(button);
+
+        function updateState() {
+            button.disabled = state.isLoading || !urls.processAudio || !supportsAudioRecording();
+            button.classList.toggle('is-recording', state.isRecording);
+            button.classList.toggle('is-loading', state.isLoading);
+            button.title = state.isRecording ? 'Detener grabación' : (props.title || 'Grabar audio');
+        }
+
+        function dispatch(name, detail) {
+            node.dispatchEvent(new window.CustomEvent(name, {
+                bubbles: true,
+                detail: detail
+            }));
+        }
+
+        function processAudio(blob, mimeType) {
+            state.isLoading = true;
+            updateState();
+            return postAudio(urls.processAudio, blob, guessAudioFilename(mimeType), {
+                prompt: props.prompt || '',
+                model: props.model || '',
+                transcription_model: props.transcriptionModel || ''
+            }).then(function (data) {
+                if (!data.success) {
+                    throw new Error(data.error || 'No se pudo procesar el audio.');
+                }
+                dispatch(props.eventName || 'ai-agent:microphone-result', {
+                    transcription: data.transcription || '',
+                    output: data.output || '',
+                    responseId: data.response_id || null,
+                    transcriptionModel: data.transcription_model || props.transcriptionModel || null,
+                    language: data.language || null
+                });
+            }).catch(function (error) {
+                dispatch('ai-agent:microphone-error', {
+                    error: error && error.message ? error.message : 'No se pudo procesar el audio.'
+                });
+            }).finally(function () {
+                state.isLoading = false;
+                updateState();
+            });
+        }
+
+        button.addEventListener('click', function () {
+            if (state.isRecording && state.recorder) {
+                state.recorder.stop();
+                state.recorder = null;
+                state.isRecording = false;
+                updateState();
+                return;
+            }
+            createAudioRecorder(function (blob, mimeType) {
+                state.isRecording = false;
+                state.recorder = null;
+                updateState();
+                processAudio(blob, mimeType);
+            }).then(function (recorder) {
+                state.recorder = recorder;
+                state.isRecording = true;
+                updateState();
+                recorder.start();
+            }).catch(function (error) {
+                dispatch('ai-agent:microphone-error', {
+                    error: error && error.message ? error.message : 'No se pudo iniciar la grabación.'
+                });
+            });
+        });
+
+        updateState();
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         document.querySelectorAll('.ai-assistant-mount').forEach(init);
+        document.querySelectorAll('.ai-assistant-microphone-mount').forEach(initMicrophone);
     });
 }());

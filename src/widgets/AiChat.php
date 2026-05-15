@@ -30,6 +30,9 @@ class AiChat extends Widget
     public string $conversationUrlParam = 'conversation_id';
     public array $htmlOptions = [];
     public ?string $toolsExecutedCallback = null;
+    public ?bool $dictationEnabled = null;
+    public ?string $transcriptionModel = null;
+    public ?bool $autoSendTranscription = null;
 
     public function run(): string
     {
@@ -82,6 +85,11 @@ class AiChat extends Widget
             'showConversationList' => $this->showConversationList,
             'conversationUrlParam' => $this->conversationUrlParam,
             'toolsExecutedCallback' => $this->toolsExecutedCallback,
+            'dictation' => [
+                'enabled' => $this->dictationEnabled ?? $module->dictationEnabled,
+                'model' => $module->resolveTranscriptionModel($this->transcriptionModel),
+                'autoSend' => $this->autoSendTranscription ?? $module->autoSendTranscription,
+            ],
             'welcomeMessages' => array_values(array_filter(
                 $module->welcomeMessages,
                 static fn($message): bool => is_string($message) && trim($message) !== ''
@@ -123,6 +131,7 @@ class AiChat extends Widget
             'archiveConversation' => $this->routeUrl('archive-conversation'),
             'deleteConversation' => $this->routeUrl('delete-conversation'),
             'sendMessage' => $this->routeUrl('send-message'),
+            'processAudio' => $this->routeUrl('process-audio'),
             'uploadAsset' => $this->routeUrl('upload-asset'),
             'executeTool' => $this->routeUrl('execute-tool'),
             'renderContexts' => $this->routeUrl('render-contexts'),

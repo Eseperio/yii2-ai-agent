@@ -559,7 +559,7 @@
 
 .ai-agent-form {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: repeat(3, auto) minmax(0, 1fr) auto;
     gap: 10px;
     padding: 12px;
     border-top: 1px solid var(--ai-agent-border);
@@ -669,4 +669,20 @@
     flex-wrap: wrap;
     gap: 6px;
     margin-bottom: 6px;
+}
+
+.ai-agent-dictate.is-recording,
+.ai-agent-microphone-button.is-recording {
+    background: #fee2e2;
+    border-color: #ef4444;
+    color: #991b1b;
+}
+
+.ai-agent-dictate.is-loading,
+.ai-agent-microphone-button.is-loading {
+    opacity: .65;
+}
+
+.ai-agent-microphone {
+    display: inline-flex;
 }

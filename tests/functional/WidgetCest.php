@@ -22,6 +22,15 @@ class WidgetCest
         $I->seeResponseContains('gpt-widget');
     }
 
+    public function testWidgetIncludesDictationConfig(\FunctionalTester $I): void
+    {
+        $I->sendGet('/ai-agent/chat/index');
+        $I->seeResponseCodeIs(200);
+        $I->seeResponseContains('process-audio');
+        $I->seeResponseContains('gpt-4o-mini-transcribe');
+        $I->seeResponseContains('autoSend');
+    }
+
     public function testWidgetModelDeniedReturns403(\FunctionalTester $I): void
     {
         $I->sendGet('/ai-agent/chat/index?model=gpt-denied&deny_model=1');
