@@ -41,7 +41,7 @@ return [
 ```
 
 `defaultModel` es el modelo por defecto del modulo. El widget puede sobreescribirlo con su parametro `model` cuando el permiso `canUseModel` lo permita.
-`dictationEnabled` muestra u oculta el dictado en el chat y habilita el widget interno de microfono. `defaultTranscriptionModel`
+`dictationEnabled` muestra u oculta el dictado en el chat y habilita el widget interno de micrófono. `defaultTranscriptionModel`
 define el modelo usado al transcribir audio; por defecto usa `gpt-4o-mini-transcribe`. `autoSendTranscription` controla si el chat
 envia automaticamente el mensaje al terminar la transcripcion.
 Si prefieres otro ID de modulo, usa el mismo valor en la configuracion y en tus rutas; la libreria no depende de que el ID sea exactamente `aiAgent`. En los ejemplos siguientes se usa el ID `aiAgent`; si configuras el modulo como `ai-agent`, las rutas seran `/ai-agent/chat/...`.

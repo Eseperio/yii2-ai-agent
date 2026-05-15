@@ -110,13 +110,22 @@ class OpenAiResponsesClient extends Component implements AiClientInterface
             }
             $multipart[] = ['name' => (string)$name, 'contents' => (string)$contents];
         }
+        $stream = fopen($filePath, 'rb');
+        if ($stream === false) {
+            throw new InvalidConfigException('Audio file could not be opened for transcription.');
+        }
+
         $multipart[] = [
             'name' => 'file',
-            'contents' => fopen($filePath, 'rb'),
-            'filename' => $fileName ?: basename($filePath),
+            'contents' => $stream,
+            'filename' => $fileName ?? basename($filePath),
         ];
 
-        return $this->requestJson('audio/transcriptions', [\GuzzleHttp\RequestOptions::MULTIPART => $multipart]);
+        try {
+            return $this->requestJson('audio/transcriptions', [\GuzzleHttp\RequestOptions::MULTIPART => $multipart]);
+        } finally {
+            fclose($stream);
+        }
     }
 
     private function requestJson(string $path, array $options): array
