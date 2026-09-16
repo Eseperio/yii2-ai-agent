@@ -28,13 +28,10 @@ class McpCest
         $resource = json_decode($I->grabResponse(), true);
         $I->assertSame('http://localhost/mcp', $resource['resource'] ?? null);
         $I->assertContains('test.read', $resource['scopes_supported'] ?? []);
+        $I->assertSame([], $resource['authorization_servers'] ?? null);
 
         $I->sendGet('/mcp/.well-known/oauth-authorization-server');
-        $I->seeResponseCodeIs(200);
-        $metadata = json_decode($I->grabResponse(), true);
-        $I->assertSame('http://localhost', $metadata['issuer'] ?? null);
-        $I->assertSame('http://localhost/mcp/oauth/authorize', $metadata['authorization_endpoint'] ?? null);
-        $I->assertContains('S256', $metadata['code_challenge_methods_supported'] ?? []);
+        $I->seeResponseCodeIs(404);
     }
 
     public function testMcpInitializeAndToolsList(\FunctionalTester $I): void
@@ -54,6 +51,7 @@ class McpCest
         $I->seeResponseCodeIs(200);
         $initialize = json_decode($I->grabResponse(), true);
         $I->assertSame('Yii2 AI Agent MCP', $initialize['result']['serverInfo']['name'] ?? null);
+        $I->assertSame('Read-only test connector.', $initialize['result']['instructions'] ?? null);
 
         $I->sendPost('/mcp', [
             'jsonrpc' => '2.0',
@@ -66,6 +64,9 @@ class McpCest
         $I->assertContains('auto_demo_tool', $tools);
         $I->assertNotContains('demo_tool', $tools);
         $I->assertNotContains('blocked_delete_tool', $tools);
+        $I->assertNotContains('remote_write_demo_tool', $tools);
+        $autoTool = $list['result']['tools'][array_search('auto_demo_tool', $tools, true)] ?? [];
+        $I->assertTrue($autoTool['annotations']['readOnlyHint'] ?? false);
     }
 
     public function testMcpCallToolAndWriteScopeImpliesRead(\FunctionalTester $I): void
@@ -115,6 +116,20 @@ class McpCest
         $I->seeResponseCodeIs(403);
         $response = json_decode($I->grabResponse(), true);
         $I->assertSame(-32003, $response['error']['code'] ?? null);
+    }
+
+    public function testRemoteWriteCannotBeCalledEvenWithWriteScope(\FunctionalTester $I): void
+    {
+        $this->authorize($I, ['test.write']);
+        $I->sendPost('/mcp', [
+            'jsonrpc' => '2.0',
+            'id' => 3,
+            'method' => 'tools/call',
+            'params' => ['name' => 'remote_write_demo_tool', 'arguments' => []],
+        ]);
+        $I->seeResponseCodeIs(200);
+        $response = json_decode($I->grabResponse(), true);
+        $I->assertTrue($response['result']['isError'] ?? false);
     }
 
     private function authorize(\FunctionalTester $I, array $scopes): void

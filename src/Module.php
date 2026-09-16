@@ -37,8 +37,13 @@ class Module extends BaseModule implements BootstrapInterface
     public array $instructionProviders = [];
     public $toolPolicyCallback = null;
     public bool $mcpEnabled = false;
+    /** Keep remote clients read-only until an application supplies a separate write approval flow. */
+    public bool $mcpAllowWrites = false;
     public string $mcpRoute = 'mcp';
+    /** Canonical external URL shared by all tenants when the host is not tenant-specific. */
+    public ?string $mcpPublicUrl = null;
     public string $mcpServerName = 'Yii2 AI Agent MCP';
+    public string $mcpInstructions = '';
     public string $mcpProtocolVersion = '2024-11-05';
     public bool $mcpRequireAuth = true;
     public ?string $mcpIssuer = null;
@@ -438,6 +443,10 @@ TEXT;
         $path = '/' . $this->normalizeMcpRoute() . ($suffix !== '' ? '/' . ltrim($suffix, '/') : '');
         if (!$absolute || !\Yii::$app || !\Yii::$app->has('request')) {
             return $path;
+        }
+
+        if (is_string($this->mcpPublicUrl) && trim($this->mcpPublicUrl) !== '') {
+            return rtrim(trim($this->mcpPublicUrl), '/') . ($suffix !== '' ? '/' . ltrim($suffix, '/') : '');
         }
 
         return rtrim((string)\Yii::$app->request->hostInfo, '/') . $path;

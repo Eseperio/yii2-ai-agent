@@ -18,8 +18,14 @@ class McpServer extends Component
         foreach ($this->getMcpTools($auth, $request) as $tool) {
             $tools[] = [
                 'name' => $tool->name,
+                'title' => (string)($tool->metadata['title'] ?? str_replace('_', ' ', $tool->name)),
                 'description' => $tool->description,
                 'inputSchema' => $tool->parameters,
+                'annotations' => [
+                    'readOnlyHint' => (bool)($tool->metadata['readOnly'] ?? in_array($tool->metadata['effect'] ?? null, ['read', 'preview'], true)),
+                    'destructiveHint' => in_array($tool->metadata['effect'] ?? null, ['delete', 'publish', 'activate'], true),
+                    'openWorldHint' => (bool)($tool->metadata['openWorld'] ?? false),
+                ],
             ];
         }
 
@@ -74,6 +80,12 @@ class McpServer extends Component
         $policy = $module?->getToolPolicy()->decide($definition, $context, $arguments);
         if ($policy && !$policy->allowed) {
             return $this->toolError($policy->reason ?? 'Tool execution denied by policy');
+        }
+        if (!$module?->mcpAllowWrites && !in_array($policy?->effect, ['read', 'preview'], true)) {
+            return $this->toolError('Remote write operations are disabled');
+        }
+        if ($policy?->requiresApproval) {
+            return $this->toolError('This operation requires an interactive approval flow');
         }
 
         $execution = $module?->getExecutionJournal()->start($definition, $context, $arguments, [
@@ -153,6 +165,9 @@ class McpServer extends Component
         $tools = [];
         foreach ($module->getToolRegistry()->getResolvedTools($context) as $tool) {
             if (!$tool instanceof ToolDefinition || !$this->isMcpEnabled($tool)) {
+                continue;
+            }
+            if (!$module->mcpAllowWrites && !in_array(strtolower((string)($tool->metadata['effect'] ?? 'write')), ['read', 'preview'], true)) {
                 continue;
             }
             if ($filterScopes && !$this->hasRequiredScopes($tool, $auth)) {

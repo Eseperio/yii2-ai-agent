@@ -26,6 +26,7 @@ class ToolHandlerTest extends TestCase
 
         \Yii::$app->setModule('aiAgent', [
             'class' => Module::class,
+            'imageToolsEnabled' => false,
             'tools' => [
                 new ToolDefinition('class_tool', 'Class tool', ['type' => 'object', 'properties' => []], ToolHandlerStub::class),
                 new ToolDefinition('callable_tool', 'Callable tool', ['type' => 'object', 'properties' => []], static fn($context, array $arguments) => new ToolResult(true, ['called' => $arguments['value'] ?? null], null, [], [], 'called')),

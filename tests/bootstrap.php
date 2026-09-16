@@ -24,7 +24,7 @@ spl_autoload_register(static function (string $class): void {
             require_once $testsPath;
         }
     }
-});
+}, true, true);
 
 spl_autoload_register(static function (string $class): void {
     $prefix = 'eseperio\\aiagent\\tests\\';

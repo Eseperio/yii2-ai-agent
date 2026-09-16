@@ -171,6 +171,7 @@ return [
             'assetStorageConfig' => ['root' => sys_get_temp_dir() . '/yii2-ai-agent-chat-assets'],
             'autoExecutionMaxIterations' => 3,
             'mcpEnabled' => true,
+            'mcpInstructions' => 'Read-only test connector.',
             'mcpRoute' => 'mcp',
             'mcpIssuer' => 'http://localhost',
             'mcpAudience' => 'yii2-ai-agent-tests',
@@ -247,6 +248,17 @@ return [
                     [],
                     null,
                     ['scope' => 'test']
+                ),
+                new \eseperio\aiagent\dto\ToolDefinition(
+                    'remote_write_demo_tool',
+                    'Must not be exposed while MCP writes are disabled',
+                    ['type' => 'object', 'properties' => new \stdClass()],
+                    static fn() => new \eseperio\aiagent\dto\ToolResult(true, ['written' => true]),
+                    false,
+                    'write-demo',
+                    [],
+                    null,
+                    ['scope' => 'test', 'mcp' => true, 'mcpScopes' => ['test.write'], 'effect' => 'write', 'allowAutonomous' => true]
                 ),
                 new \eseperio\aiagent\dto\ToolDefinition(
                     'class_demo_tool',

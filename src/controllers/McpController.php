@@ -36,12 +36,6 @@ class McpController extends Controller
             throw new NotFoundHttpException();
         }
 
-        if (is_callable($this->module->mcpAvailabilityCallback)
-            && !call_user_func($this->module->mcpAvailabilityCallback, \Yii::$app->request, $this->module, $action)
-        ) {
-            throw new NotFoundHttpException();
-        }
-
         $this->applyCors();
 
         if (!$this->isOriginAllowed()) {
@@ -62,12 +56,22 @@ class McpController extends Controller
         if (!$auth instanceof McpAuthContext) {
             return $auth;
         }
-
-        $payload = \Yii::$app->request->bodyParams;
-        if (!is_array($payload) || $payload === []) {
-            $raw = \Yii::$app->request->rawBody;
-            $payload = json_decode((string)$raw, true);
+        if (is_callable($this->module->mcpAvailabilityCallback)
+            && !call_user_func($this->module->mcpAvailabilityCallback, \Yii::$app->request, $this->module, $this->action)
+        ) {
+            throw new ForbiddenHttpException('MCP is not available for this store');
         }
+
+        $contentLength = (int)\Yii::$app->request->headers->get('Content-Length', 0);
+        if ($contentLength > 1048576) {
+            return $this->json(['error' => 'request_too_large'], 413);
+        }
+
+        $raw = (string)\Yii::$app->request->rawBody;
+        if (strlen($raw) > 1048576) {
+            return $this->json(['error' => 'request_too_large'], 413);
+        }
+        $payload = $raw !== '' ? json_decode($raw, true) : \Yii::$app->request->bodyParams;
         if (!is_array($payload)) {
             return $this->jsonRpcError(null, -32700, 'Parse error');
         }
@@ -82,9 +86,9 @@ class McpController extends Controller
 
         return [
             'resource' => $module->buildMcpUrl('', true),
-            'authorization_servers' => [
-                $module->buildMcpUrl('.well-known/oauth-authorization-server', true),
-            ],
+            'authorization_servers' => is_callable($module->mcpAuthorizationHandler) && is_callable($module->mcpTokenHandler)
+                ? [$module->resolveMcpIssuer()]
+                : [],
             'bearer_methods_supported' => ['header'],
             'scopes_supported' => $module->getMcpSupportedScopes(),
         ];
@@ -94,6 +98,10 @@ class McpController extends Controller
     {
         $module = $this->module;
         $this->asJsonResponse();
+        if (!is_callable($module->mcpAuthorizationHandler) || !is_callable($module->mcpTokenHandler)) {
+            \Yii::$app->response->statusCode = 404;
+            return ['error' => 'not_found'];
+        }
 
         $metadata = [
             'issuer' => $module->resolveMcpIssuer(),
@@ -152,6 +160,7 @@ class McpController extends Controller
                     'name' => $this->module->mcpServerName,
                     'version' => '1.0.0',
                 ],
+                'instructions' => $this->module->mcpInstructions,
             ]),
             'notifications/initialized', 'ping' => $this->jsonRpcResult($id, new \stdClass()),
             'tools/list' => $this->jsonRpcResult($id, $this->module->getMcpServer()->listTools($auth, \Yii::$app->request)),
@@ -184,7 +193,7 @@ class McpController extends Controller
             $this->setAuthenticateHeader();
             return $this->json([
                 'error' => 'unauthorized',
-                'error_description' => $exception->getMessage(),
+                'error_description' => 'Invalid or expired bearer token',
             ], 401);
         }
     }
