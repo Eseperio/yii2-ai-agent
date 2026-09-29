@@ -27,8 +27,16 @@ class AiChat extends Widget
     public ?int $conversationId = null;
     public bool $autoOpen = false;
     public bool $showConversationList = true;
+    public bool $showNewConversationButton = true;
+    public bool $showWelcomeMessage = true;
     public string $conversationUrlParam = 'conversation_id';
     public ?string $workspaceUrl = null;
+    public ?string $assistantTitle = null;
+    public ?string $conversationTitle = null;
+    public array $conversationMetadata = [];
+    public ?string $starterMessage = null;
+    public ?string $inputPlaceholder = null;
+    public ?string $collapsedHint = null;
     public array $htmlOptions = [];
     public ?string $toolsExecutedCallback = null;
 
@@ -81,13 +89,22 @@ class AiChat extends Widget
             'apiUrls' => $this->resolveApiUrls(),
             'autoOpen' => $this->autoOpen,
             'showConversationList' => $this->mode === self::MODE_PAGE && $this->showConversationList,
+            'showNewConversationButton' => $this->showNewConversationButton,
             'conversationUrlParam' => $this->conversationUrlParam,
             'workspaceUrl' => $this->resolveWorkspaceUrl(),
+            'assistantTitle' => $this->assistantTitle,
+            'conversationTitle' => $this->conversationTitle,
+            'conversationMetadata' => $this->conversationMetadata,
+            'starterMessage' => $this->starterMessage,
+            'inputPlaceholder' => $this->inputPlaceholder,
+            'collapsedHint' => $this->collapsedHint,
             'toolsExecutedCallback' => $this->toolsExecutedCallback,
-            'welcomeMessages' => array_values(array_filter(
-                $module->welcomeMessages,
-                static fn($message): bool => is_string($message) && trim($message) !== ''
-            )),
+            'welcomeMessages' => $this->showWelcomeMessage
+                ? array_values(array_filter(
+                    $module->welcomeMessages,
+                    static fn($message): bool => is_string($message) && trim($message) !== ''
+                ))
+                : [],
             'permissions' => [
                 'canViewChat' => true,
                 'canCreateChat' => $module->getPermissionChecker()->canCreateChat(new PermissionContext(action: 'widget', user: $this->getViewUser())),

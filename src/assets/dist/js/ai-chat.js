@@ -181,6 +181,12 @@
         return '[ai_questionnaire:' + responseMarkerKey(responseId) + ':' + (status === 'skipped' ? 'skipped' : 'submitted') + ']';
     }
 
+    var STARTER_MESSAGE_MARKER = '[ai_starter_message]';
+
+    function isStarterMessage(content) {
+        return String(content || '').trim().indexOf(STARTER_MESSAGE_MARKER) === 0;
+    }
+
     function parseQuestionnaireMarker(content) {
         var match = String(content || '').match(/\[ai_questionnaire:([^:\]]+):(submitted|skipped)\]/);
         if (!match) {
@@ -789,7 +795,7 @@
         var header = el('header', 'ai-agent-header');
         var title = el('strong', 'ai-agent-title');
         title.appendChild(icon('fa-sparkles'));
-        title.appendChild(el('span', '', 'Asistente de IA'));
+        title.appendChild(el('span', '', props.assistantTitle || 'Asistente de IA'));
         var actions = el('div', 'ai-agent-header-actions');
         var newButton = iconButton('ai-agent-icon-button', 'fa-plus', 'Nueva conversación');
         var maximizeButton = iconButton('ai-agent-icon-button ai-agent-maximize', 'fa-expand-alt', 'Abrir pantalla completa');
@@ -798,7 +804,9 @@
             props.mode === 'floating' && !props.autoOpen ? 'fa-robot' : 'fa-times',
             props.mode === 'floating' && !props.autoOpen ? 'Abrir asistente' : 'Cerrar asistente'
         );
-        actions.appendChild(newButton);
+        if (props.showNewConversationButton !== false) {
+            actions.appendChild(newButton);
+        }
         if (props.mode === 'floating') {
             if (props.workspaceUrl) {
                 actions.appendChild(maximizeButton);
@@ -833,7 +841,7 @@
         var input = document.createElement('textarea');
         input.className = 'ai-agent-input';
         input.rows = 2;
-        input.placeholder = 'Escribe un mensaje';
+        input.placeholder = props.inputPlaceholder || 'Escribe un mensaje';
         var send = el('button', 'ai-agent-send');
         send.type = 'submit';
         send.appendChild(icon('fa-paper-plane'));
@@ -853,6 +861,31 @@
         shell.appendChild(header);
         shell.appendChild(layout);
         node.appendChild(shell);
+
+        var collapsedHint = null;
+        var collapsedHintDismissed = false;
+        if (props.mode === 'floating' && typeof props.collapsedHint === 'string' && props.collapsedHint.trim() !== '') {
+            collapsedHint = el('div', 'ai-agent-collapsed-hint');
+            collapsedHint.setAttribute('role', 'status');
+            var collapsedHintText = el('button', 'ai-agent-collapsed-hint-text', props.collapsedHint.trim());
+            collapsedHintText.type = 'button';
+            var collapsedHintClose = iconButton('ai-agent-collapsed-hint-close', 'fa-times', 'Cerrar aviso');
+            collapsedHint.appendChild(collapsedHintText);
+            collapsedHint.appendChild(collapsedHintClose);
+            node.appendChild(collapsedHint);
+            collapsedHintText.addEventListener('click', function () {
+                node.classList.remove('is-collapsed');
+                setButtonIcon(toggleButton, 'fa-times', 'Cerrar asistente');
+                toggleButton.setAttribute('aria-expanded', 'true');
+                collapsedHint.hidden = true;
+                input.focus();
+            });
+            collapsedHintClose.addEventListener('click', function (event) {
+                event.stopPropagation();
+                collapsedHintDismissed = true;
+                collapsedHint.hidden = true;
+            });
+        }
 
         if (props.mode === 'floating' && !props.autoOpen) {
             node.classList.add('is-collapsed');
@@ -978,7 +1011,9 @@
         function updateComposerState() {
             var disabled = state.busy || state.questionnaireBlocked || permissions.canSendMessage === false;
             input.disabled = disabled;
-            input.placeholder = state.questionnaireBlocked ? 'Responde primero al formulario pendiente' : 'Escribe un mensaje';
+            input.placeholder = state.questionnaireBlocked
+                ? 'Responde primero al formulario pendiente'
+                : (props.inputPlaceholder || 'Escribe un mensaje');
             send.disabled = disabled || (input.value.trim() === '' && state.pendingAssets.length === 0);
             attach.disabled = state.busy || state.isUploading || !api('uploadAsset');
             generate.disabled = disabled;
@@ -1003,6 +1038,7 @@
                 var clone = Object.assign({}, message);
                 if (clone.role === 'user') {
                     clone.isInternalQuestionnaireReply = !!parseQuestionnaireMarker(clone.content);
+                    clone.isInternalStarterMessage = isStarterMessage(clone.content);
                     clone.content = stripInternalUserPrefix(stripQuestionnaireMarker(clone.content));
                 }
                 if (clone.message_type === 'questionnaire') {
@@ -1045,6 +1081,9 @@
             updateComposerState();
             return prepared.filter(function (message) {
                 if (message.isInternalQuestionnaireReply) {
+                    return false;
+                }
+                if (message.isInternalStarterMessage) {
                     return false;
                 }
                 if (message.message_type === 'tool_result') {
@@ -1207,7 +1246,9 @@
                 setBusy(true);
             }
             return post(api('createConversation'), {
+                title: props.conversationTitle || null,
                 model: props.model || null,
+                metadata: props.conversationMetadata || {},
                 contexts: props.contexts || []
             }).then(function (data) {
                 if (data.success && data.conversation) {
@@ -1393,6 +1434,15 @@
             });
         }
 
+        function sendStarterMessageIfNeeded() {
+            var starterMessage = typeof props.starterMessage === 'string' ? props.starterMessage.trim() : '';
+            if (starterMessage === '' || state.lastMessages.length > 0 || state.starterMessageAttempted) {
+                return Promise.resolve();
+            }
+            state.starterMessageAttempted = true;
+            return sendMessageValue(STARTER_MESSAGE_MARKER + '\n' + starterMessage, true);
+        }
+
         attach.addEventListener('click', function () {
             fileInput.click();
         });
@@ -1438,8 +1488,14 @@
             var collapsed = node.classList.contains('is-collapsed');
             setButtonIcon(toggleButton, collapsed ? 'fa-robot' : 'fa-times', collapsed ? 'Abrir asistente' : 'Cerrar asistente');
             toggleButton.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            if (collapsedHint) {
+                collapsedHint.hidden = !collapsed || collapsedHintDismissed;
+            }
         });
         toggleButton.setAttribute('aria-expanded', node.classList.contains('is-collapsed') ? 'false' : 'true');
+        if (collapsedHint) {
+            collapsedHint.hidden = !node.classList.contains('is-collapsed');
+        }
 
         if (state.conversationId) {
             syncConversationIdToUrl(state.conversationId);
@@ -1452,6 +1508,7 @@
             .then(function () {
                 return Promise.all([loadConversations(), loadHistory(), loadContexts()]);
             })
+            .then(sendStarterMessageIfNeeded)
             .then(scrollMessagesToBottom);
     }
 

@@ -50,8 +50,16 @@ class WidgetTest extends TestCase
         $widget->apiUrls = ['/api/chat'];
         $widget->autoOpen = true;
         $widget->showConversationList = false;
+        $widget->showNewConversationButton = false;
+        $widget->showWelcomeMessage = false;
         $widget->conversationUrlParam = 'chat_id';
         $widget->workspaceUrl = '/assistant/workspace';
+        $widget->assistantTitle = 'Guided assistant';
+        $widget->conversationTitle = 'Create a product';
+        $widget->conversationMetadata = ['flow' => 'product_creation'];
+        $widget->starterMessage = 'Start the interview.';
+        $widget->inputPlaceholder = 'Describe the product';
+        $widget->collapsedHint = 'Continue editing with AI';
         $widget->toolsExecutedCallback = 'window.onToolsExecuted';
 
         $props = $widget->exposeProps();
@@ -63,11 +71,17 @@ class WidgetTest extends TestCase
         $this->assertSame(['/api/chat'], $props['apiUrls']);
         $this->assertTrue($props['autoOpen']);
         $this->assertFalse($props['showConversationList']);
+        $this->assertFalse($props['showNewConversationButton']);
         $this->assertSame('chat_id', $props['conversationUrlParam']);
         $this->assertSame('/assistant/workspace', $props['workspaceUrl']);
+        $this->assertSame('Guided assistant', $props['assistantTitle']);
+        $this->assertSame('Create a product', $props['conversationTitle']);
+        $this->assertSame(['flow' => 'product_creation'], $props['conversationMetadata']);
+        $this->assertSame('Start the interview.', $props['starterMessage']);
+        $this->assertSame('Describe the product', $props['inputPlaceholder']);
+        $this->assertSame('Continue editing with AI', $props['collapsedHint']);
         $this->assertSame('window.onToolsExecuted', $props['toolsExecutedCallback']);
-        $this->assertCount(20, $props['welcomeMessages']);
-        $this->assertSame('Hola, ¿qué hacemos hoy?', $props['welcomeMessages'][0]);
+        $this->assertSame([], $props['welcomeMessages']);
         $this->assertTrue($props['permissions']['canViewChat']);
         $this->assertTrue($props['permissions']['canUseModel']);
     }
