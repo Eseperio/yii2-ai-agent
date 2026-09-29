@@ -28,6 +28,7 @@ class AiChat extends Widget
     public bool $autoOpen = false;
     public bool $showConversationList = true;
     public string $conversationUrlParam = 'conversation_id';
+    public ?string $workspaceUrl = null;
     public array $htmlOptions = [];
     public ?string $toolsExecutedCallback = null;
 
@@ -79,8 +80,9 @@ class AiChat extends Widget
             'contexts' => $this->contexts,
             'apiUrls' => $this->resolveApiUrls(),
             'autoOpen' => $this->autoOpen,
-            'showConversationList' => $this->showConversationList,
+            'showConversationList' => $this->mode === self::MODE_PAGE && $this->showConversationList,
             'conversationUrlParam' => $this->conversationUrlParam,
+            'workspaceUrl' => $this->resolveWorkspaceUrl(),
             'toolsExecutedCallback' => $this->toolsExecutedCallback,
             'welcomeMessages' => array_values(array_filter(
                 $module->welcomeMessages,
@@ -148,6 +150,15 @@ class AiChat extends Widget
         } catch (\Throwable) {
             return '/index.php?r=' . ltrim($route, '/');
         }
+    }
+
+    private function resolveWorkspaceUrl(): string
+    {
+        if (is_string($this->workspaceUrl) && trim($this->workspaceUrl) !== '') {
+            return $this->workspaceUrl;
+        }
+
+        return $this->routeUrl('index');
     }
 
     private function moduleRoute(): string

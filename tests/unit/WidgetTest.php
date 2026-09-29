@@ -51,6 +51,7 @@ class WidgetTest extends TestCase
         $widget->autoOpen = true;
         $widget->showConversationList = false;
         $widget->conversationUrlParam = 'chat_id';
+        $widget->workspaceUrl = '/assistant/workspace';
         $widget->toolsExecutedCallback = 'window.onToolsExecuted';
 
         $props = $widget->exposeProps();
@@ -63,11 +64,31 @@ class WidgetTest extends TestCase
         $this->assertTrue($props['autoOpen']);
         $this->assertFalse($props['showConversationList']);
         $this->assertSame('chat_id', $props['conversationUrlParam']);
+        $this->assertSame('/assistant/workspace', $props['workspaceUrl']);
         $this->assertSame('window.onToolsExecuted', $props['toolsExecutedCallback']);
         $this->assertCount(20, $props['welcomeMessages']);
         $this->assertSame('Hola, ¿qué hacemos hoy?', $props['welcomeMessages'][0]);
         $this->assertTrue($props['permissions']['canViewChat']);
         $this->assertTrue($props['permissions']['canUseModel']);
+    }
+
+    public function testConversationListIsOnlyExposedInPageMode(): void
+    {
+        $widget = new class extends AiChat {
+            public function exposeProps(): array
+            {
+                return $this->buildProps($this->getModule());
+            }
+        };
+
+        $widget->mode = AiChat::MODE_FLOATING;
+        $widget->showConversationList = true;
+        $this->assertFalse($widget->exposeProps()['showConversationList']);
+
+        $widget->mode = AiChat::MODE_PAGE;
+        $this->assertTrue($widget->exposeProps()['showConversationList']);
+        $this->assertStringContainsString('aiAgent', $widget->exposeProps()['workspaceUrl']);
+        $this->assertStringContainsString('chat', $widget->exposeProps()['workspaceUrl']);
     }
 
     public function testModuleAlternatesWelcomeMessageByConversationId(): void

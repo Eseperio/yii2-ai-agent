@@ -74,6 +74,7 @@ echo \eseperio\aiagent\widgets\AiChat::widget([
 ```
 
 `mode` admite `floating` o `page`. `position` solo aplica en modo flotante y acepta `bottom-right`, `bottom-left`, `top-right` o `top-left`.
+El modo `floating` muestra un panel lateral con la conversacion actual y un boton para abrirla en la pantalla completa. El historico y las acciones de gestion de conversaciones se muestran solo en `page`. Puedes personalizar el destino del boton con `workspaceUrl`; por defecto apunta a la accion `chat/index` del modulo y conserva la conversacion activa.
 
 ## Permisos
 

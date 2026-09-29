@@ -116,6 +116,27 @@
         return node;
     }
 
+    function icon(className) {
+        var node = el('i', 'fas ' + className);
+        node.setAttribute('aria-hidden', 'true');
+        return node;
+    }
+
+    function iconButton(className, iconClass, label) {
+        var button = el('button', className);
+        button.type = 'button';
+        button.title = label;
+        button.setAttribute('aria-label', label);
+        button.appendChild(icon(iconClass));
+        return button;
+    }
+
+    function setButtonIcon(button, iconClass, label) {
+        button.replaceChildren(icon(iconClass));
+        button.title = label;
+        button.setAttribute('aria-label', label);
+    }
+
     var processingMessages = [
         '•••',
         'pensando',
@@ -764,17 +785,24 @@
         }
 
         var shell = el('section', 'ai-agent-shell');
+        shell.setAttribute('aria-label', 'Asistente de IA');
         var header = el('header', 'ai-agent-header');
-        var title = el('strong', 'ai-agent-title', 'AI Assistant');
+        var title = el('strong', 'ai-agent-title');
+        title.appendChild(icon('fa-sparkles'));
+        title.appendChild(el('span', '', 'Asistente de IA'));
         var actions = el('div', 'ai-agent-header-actions');
-        var newButton = el('button', 'ai-agent-icon-button', '+');
-        newButton.type = 'button';
-        newButton.title = 'Nueva conversacion';
-        var toggleButton = el('button', 'ai-agent-icon-button ai-agent-toggle', props.mode === 'floating' && !props.autoOpen ? 'AI' : 'x');
-        toggleButton.type = 'button';
-        toggleButton.title = 'Abrir chat';
+        var newButton = iconButton('ai-agent-icon-button', 'fa-plus', 'Nueva conversación');
+        var maximizeButton = iconButton('ai-agent-icon-button ai-agent-maximize', 'fa-expand-alt', 'Abrir pantalla completa');
+        var toggleButton = iconButton(
+            'ai-agent-icon-button ai-agent-toggle',
+            props.mode === 'floating' && !props.autoOpen ? 'fa-robot' : 'fa-times',
+            props.mode === 'floating' && !props.autoOpen ? 'Abrir asistente' : 'Cerrar asistente'
+        );
         actions.appendChild(newButton);
         if (props.mode === 'floating') {
+            if (props.workspaceUrl) {
+                actions.appendChild(maximizeButton);
+            }
             actions.appendChild(toggleButton);
         }
         header.appendChild(title);
@@ -782,8 +810,11 @@
 
         var layout = el('div', 'ai-agent-layout');
         var sidebar = el('aside', 'ai-agent-sidebar');
+        var sidebarHeader = el('div', 'ai-agent-sidebar-header');
+        sidebarHeader.appendChild(el('h2', 'ai-agent-sidebar-title', 'Conversaciones'));
         var conversations = el('div', 'ai-agent-conversations');
         var contexts = el('div', 'ai-agent-contexts');
+        sidebar.appendChild(sidebarHeader);
         sidebar.appendChild(conversations);
         sidebar.appendChild(contexts);
 
@@ -796,19 +827,17 @@
         fileInput.multiple = true;
         fileInput.className = 'ai-agent-file-input';
         fileInput.hidden = true;
-        var attach = el('button', 'ai-agent-icon-button ai-agent-attach', '+');
-        attach.type = 'button';
-        attach.title = 'Adjuntar archivo';
-        var generate = el('button', 'ai-agent-icon-button ai-agent-generate', 'IA');
-        generate.type = 'button';
-        generate.title = 'Generar imagen con IA';
+        var attach = iconButton('ai-agent-icon-button ai-agent-attach', 'fa-paperclip', 'Adjuntar archivo');
+        var generate = iconButton('ai-agent-icon-button ai-agent-generate', 'fa-magic', 'Generar imagen con IA');
         var assetTray = el('div', 'ai-agent-pending-assets-wrap');
         var input = document.createElement('textarea');
         input.className = 'ai-agent-input';
         input.rows = 2;
         input.placeholder = 'Escribe un mensaje';
-        var send = el('button', 'ai-agent-send', 'Enviar');
+        var send = el('button', 'ai-agent-send');
         send.type = 'submit';
+        send.appendChild(icon('fa-paper-plane'));
+        send.appendChild(el('span', '', 'Enviar'));
         form.appendChild(fileInput);
         form.appendChild(assetTray);
         form.appendChild(attach);
@@ -828,6 +857,10 @@
         if (props.mode === 'floating' && !props.autoOpen) {
             node.classList.add('is-collapsed');
         }
+        if (!props.showConversationList) {
+            sidebar.hidden = true;
+            layout.classList.add('ai-agent-layout-chat-only');
+        }
 
         function api(name, fallback) {
             return urls[name] || fallback || '';
@@ -843,7 +876,7 @@
         }
 
         function syncConversationIdToUrl(conversationId) {
-            if (!conversationUrlParam || !window.history || !window.location || !window.URL) {
+            if (props.mode !== 'page' || !conversationUrlParam || !window.history || !window.location || !window.URL) {
                 return;
             }
             var url = new URL(window.location.href);
@@ -1093,8 +1126,11 @@
         function loadConversations() {
             if (!props.showConversationList || !api('listConversations') || permissions.canViewHistory === false) {
                 sidebar.hidden = true;
+                layout.classList.add('ai-agent-layout-chat-only');
                 return Promise.resolve();
             }
+            sidebar.hidden = false;
+            layout.classList.remove('ai-agent-layout-chat-only');
             return get(api('listConversations'), {}).then(function (data) {
                 conversations.replaceChildren();
                 (data.conversations || []).forEach(function (conversation) {
@@ -1104,6 +1140,7 @@
                     open.dataset.id = conversation.id;
                     if (Number(conversation.id) === Number(state.conversationId)) {
                         open.classList.add('is-active');
+                        open.setAttribute('aria-current', 'true');
                     }
                     open.addEventListener('click', function () {
                         state.conversationId = conversation.id;
@@ -1112,9 +1149,7 @@
                     });
                     row.appendChild(open);
                     if (permissions.canRenameChat !== false && api('renameConversation')) {
-                        var rename = el('button', 'ai-agent-mini-action', 'R');
-                        rename.type = 'button';
-                        rename.title = 'Renombrar';
+                        var rename = iconButton('ai-agent-mini-action', 'fa-pen', 'Renombrar conversación');
                         rename.addEventListener('click', function () {
                             var title = window.prompt('Nuevo titulo', conversation.title || '');
                             if (title === null) {
@@ -1125,18 +1160,14 @@
                         row.appendChild(rename);
                     }
                     if (permissions.canArchiveChat !== false && api('archiveConversation')) {
-                        var archive = el('button', 'ai-agent-mini-action', 'A');
-                        archive.type = 'button';
-                        archive.title = 'Archivar';
+                        var archive = iconButton('ai-agent-mini-action', 'fa-archive', 'Archivar conversación');
                         archive.addEventListener('click', function () {
                             post(api('archiveConversation'), {conversation_id: conversation.id}).then(loadConversations);
                         });
                         row.appendChild(archive);
                     }
                     if (permissions.canDeleteChat !== false && api('deleteConversation')) {
-                        var remove = el('button', 'ai-agent-mini-action', 'D');
-                        remove.type = 'button';
-                        remove.title = 'Eliminar';
+                        var remove = iconButton('ai-agent-mini-action ai-agent-mini-action-danger', 'fa-trash-alt', 'Eliminar conversación');
                         remove.addEventListener('click', function () {
                             if (!window.confirm('Eliminar conversacion?')) {
                                 return;
@@ -1392,10 +1423,23 @@
         });
 
         newButton.addEventListener('click', createConversation);
+        maximizeButton.addEventListener('click', function () {
+            if (!props.workspaceUrl || !window.location) {
+                return;
+            }
+            var target = new URL(props.workspaceUrl, window.location.href);
+            if (state.conversationId && conversationUrlParam) {
+                target.searchParams.set(conversationUrlParam, String(state.conversationId));
+            }
+            window.location.assign(target.toString());
+        });
         toggleButton.addEventListener('click', function () {
             node.classList.toggle('is-collapsed');
-            toggleButton.textContent = node.classList.contains('is-collapsed') ? 'AI' : 'x';
+            var collapsed = node.classList.contains('is-collapsed');
+            setButtonIcon(toggleButton, collapsed ? 'fa-robot' : 'fa-times', collapsed ? 'Abrir asistente' : 'Cerrar asistente');
+            toggleButton.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
         });
+        toggleButton.setAttribute('aria-expanded', node.classList.contains('is-collapsed') ? 'false' : 'true');
 
         if (state.conversationId) {
             syncConversationIdToUrl(state.conversationId);
