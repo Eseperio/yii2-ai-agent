@@ -24,7 +24,8 @@ class CreateConversationAction extends BaseChatAction
             $model,
             is_array($request->post('metadata')) ? $request->post('metadata') : [],
             is_array($request->post('contexts')) ? $request->post('contexts') : [],
-            $this->resolveCreatedBy()
+            $this->resolveCreatedBy(),
+            (bool)$request->post('force_new', false)
         );
 
         return $this->json([

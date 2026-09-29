@@ -52,6 +52,7 @@ class WidgetTest extends TestCase
         $widget->showConversationList = false;
         $widget->showNewConversationButton = false;
         $widget->showWelcomeMessage = false;
+        $widget->forceNewConversation = true;
         $widget->conversationUrlParam = 'chat_id';
         $widget->workspaceUrl = '/assistant/workspace';
         $widget->assistantTitle = 'Guided assistant';
@@ -72,6 +73,7 @@ class WidgetTest extends TestCase
         $this->assertTrue($props['autoOpen']);
         $this->assertFalse($props['showConversationList']);
         $this->assertFalse($props['showNewConversationButton']);
+        $this->assertTrue($props['forceNewConversation']);
         $this->assertSame('chat_id', $props['conversationUrlParam']);
         $this->assertSame('/assistant/workspace', $props['workspaceUrl']);
         $this->assertSame('Guided assistant', $props['assistantTitle']);

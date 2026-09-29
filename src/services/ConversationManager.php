@@ -9,12 +9,19 @@ use yii\db\ActiveRecord;
 
 class ConversationManager extends Component
 {
-    public function createConversation(?string $title = null, ?string $model = null, array $metadata = [], array $contexts = [], mixed $createdBy = null): Conversation
+    public function createConversation(
+        ?string $title = null,
+        ?string $model = null,
+        array $metadata = [],
+        array $contexts = [],
+        mixed $createdBy = null,
+        bool $forceNew = false
+    ): Conversation
     {
         $module = $this->getModule();
         $conversationClass = $this->conversationClass();
         $messageClass = $this->messageClass();
-        if ($module?->reuseLastEmptyConversation && $createdBy !== null && $createdBy !== '') {
+        if (!$forceNew && $module?->reuseLastEmptyConversation && $createdBy !== null && $createdBy !== '') {
             $query = $conversationClass::find()
                 ->alias('conversation')
                 ->leftJoin($messageClass::tableName() . ' message', 'message.conversation_id = conversation.id')

@@ -29,6 +29,7 @@ class AiChat extends Widget
     public bool $showConversationList = true;
     public bool $showNewConversationButton = true;
     public bool $showWelcomeMessage = true;
+    public bool $forceNewConversation = false;
     public string $conversationUrlParam = 'conversation_id';
     public ?string $workspaceUrl = null;
     public ?string $assistantTitle = null;
@@ -90,6 +91,7 @@ class AiChat extends Widget
             'autoOpen' => $this->autoOpen,
             'showConversationList' => $this->mode === self::MODE_PAGE && $this->showConversationList,
             'showNewConversationButton' => $this->showNewConversationButton,
+            'forceNewConversation' => $this->forceNewConversation,
             'conversationUrlParam' => $this->conversationUrlParam,
             'workspaceUrl' => $this->resolveWorkspaceUrl(),
             'assistantTitle' => $this->assistantTitle,

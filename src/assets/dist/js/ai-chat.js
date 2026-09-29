@@ -1249,6 +1249,7 @@
                 title: props.conversationTitle || null,
                 model: props.model || null,
                 metadata: props.conversationMetadata || {},
+                force_new: props.forceNewConversation === true ? 1 : 0,
                 contexts: props.contexts || []
             }).then(function (data) {
                 if (data.success && data.conversation) {
